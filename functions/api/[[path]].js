@@ -49,6 +49,10 @@ export async function onRequest(context) {
     return json({ error: "المسار غير موجود" }, 404);
   } catch (error) {
     console.error(error);
+    if (path === "setup/owner") {
+      const detail = String(error?.message || error).replace(/[\r\n]+/g, " ").slice(0, 220);
+      return json({ error: `تعذر إنشاء الحساب: ${detail}` }, 500);
+    }
     return json({ error: "حدث خطأ في الخادم" }, 500);
   }
 }
