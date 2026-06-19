@@ -17,6 +17,7 @@ export async function onRequest(context) {
       return json({ error: "طلب غير مسموح" }, 403);
     }
 
+    if (method === "GET" && path === "setup/status") return setupStatus(env);
     if (method === "POST" && path === "setup/owner") return setupOwner(request, env);
     if (method === "POST" && path === "auth/login") return login(request, env);
     if (method === "POST" && path === "auth/logout") return logout(request, env);
@@ -65,6 +66,19 @@ async function setupOwner(request, env) {
   await env.DB.prepare("INSERT INTO users (name, username, password_hash, password_salt, role, level, points) VALUES (?, ?, ?, ?, 'owner', 0, 0)")
     .bind(fields.name, fields.username, password.hash, password.salt).run();
   return json({ ok: true }, 201);
+}
+
+async function setupStatus(env) {
+  const status = { databaseBound: Boolean(env.DB), setupTokenConfigured: Boolean(env.SETUP_TOKEN), schemaReady: false, ownerExists: false };
+  if (!env.DB) return json(status);
+  try {
+    const table = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").first();
+    status.schemaReady = Boolean(table);
+    if (table) status.ownerExists = Boolean(await env.DB.prepare("SELECT id FROM users WHERE role = 'owner' LIMIT 1").first());
+  } catch (error) {
+    status.databaseError = String(error?.message || error).slice(0, 160);
+  }
+  return json(status);
 }
 
 async function ensureSchema(env) {
