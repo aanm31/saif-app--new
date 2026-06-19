@@ -1,11 +1,18 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "saif-app",
+  "name": "saif-app--new",
   "main": "worker.js",
   "compatibility_date": "2026-06-19",
   "assets": {
     "directory": "./docs",
     "binding": "ASSETS",
     "run_worker_first": ["/api", "/api/*"]
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "saif-db",
+      "database_id": "353ba70d-cebe-4b99-b013-df25fafe80af"
+    }
+  ]
 }
