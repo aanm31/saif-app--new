@@ -85,7 +85,9 @@ async function ensureSchema(env) {
     "INSERT OR IGNORE INTO products (id,name,description,price,icon,stock) VALUES (5,'وقت لعب إضافي','30 دقيقة ألعاب تعليمية إضافية',600,'🎮',20)",
     "INSERT OR IGNORE INTO products (id,name,description,price,icon,stock) VALUES (6,'شارة المستكشف','شارة نادرة تظهر في ملفك الشخصي',900,'🧭',12)"
   ];
-  await env.DB.batch(statements.map(statement => env.DB.prepare(statement)));
+  for (const statement of statements) {
+    await env.DB.prepare(statement).run();
+  }
 }
 
 async function login(request, env) {
