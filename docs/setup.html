@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>إعداد مالك صيف</title>
+  <link rel="stylesheet" href="summer.css">
+</head>
+<body>
+  <main class="auth-panel" style="min-height:100vh">
+    <section class="auth-box">
+      <div class="auth-heading"><span class="auth-logo">ص</span><div><h2>إعداد حساب المالك</h2><p>تُستخدم هذه الصفحة مرة واحدة فقط</p></div></div>
+      <form class="auth-form" id="setupForm">
+        <label>سر الإعداد في Cloudflare<input id="setupToken" type="password" required autocomplete="off"></label>
+        <label>اسم المالك<input id="ownerName" required value="مالك منصة صيف"></label>
+        <label>اسم المستخدم<input id="ownerUsername" required value="seif48" pattern="[A-Za-z0-9_.-]{3,40}"></label>
+        <label>كلمة مرور جديدة<input id="ownerPassword" type="password" required minlength="8" autocomplete="new-password"></label>
+        <button class="auth-submit" type="submit">إنشاء حساب المالك</button>
+        <p class="auth-message" id="setupMessage"></p>
+      </form>
+    </section>
+  </main>
+  <script>
+    document.querySelector("#setupForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const message = document.querySelector("#setupMessage");
+      message.textContent = "جارٍ إنشاء الحساب...";
+      const response = await fetch("/api/setup/owner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          setupToken: document.querySelector("#setupToken").value,
+          name: document.querySelector("#ownerName").value,
+          username: document.querySelector("#ownerUsername").value,
+          password: document.querySelector("#ownerPassword").value
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { message.textContent = data.error || "تعذر إنشاء الحساب"; return; }
+      message.classList.add("success");
+      message.textContent = "تم إنشاء حساب المالك. سيتم نقلك لتسجيل الدخول.";
+      setTimeout(() => location.href = "/", 1400);
+    });
+  </script>
+</body>
+</html>

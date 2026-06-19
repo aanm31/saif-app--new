@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#12a9c7">
+  <title>صيف | مغامرة التعلّم</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="summer.css">
+</head>
+<body>
+  <section class="auth-screen" id="authScreen">
+    <div class="auth-showcase">
+      <div class="auth-brand"><span class="brand-mark">ص</span><strong>صَيْف</strong></div>
+      <div>
+        <span class="auth-kicker">نادي المغامرات الصيفية</span>
+        <h1>جاهز لصيف مليء بالمرح؟</h1>
+        <p>مسابقات وألعاب ومراحل مضحكة، وكل إنجاز يملأ حقيبة نجومك بمكافآت جديدة.</p>
+      </div>
+      <div class="auth-feature-row"><span>مسابقات</span><span>مراحل</span><span>مكافآت</span></div>
+    </div>
+    <div class="auth-panel">
+      <div class="auth-box">
+        <div class="auth-heading"><span class="auth-logo">ص</span><div><h2 id="authTitle">أهلًا بالمغامر!</h2><p id="authSubtitle">أدخل بياناتك وابدأ يومًا صيفيًا جديدًا</p></div></div>
+        <div class="auth-tabs" role="tablist">
+          <button class="auth-tab active" data-auth-view="login">تسجيل الدخول</button>
+          <button class="auth-tab" data-auth-view="request">طلب حساب</button>
+        </div>
+        <form class="auth-form" id="loginForm">
+          <label>اسم المستخدم<input id="loginUsername" autocomplete="username" required placeholder="أدخل اسم المستخدم"></label>
+          <label>كلمة المرور<input id="loginPassword" type="password" autocomplete="current-password" required placeholder="أدخل كلمة المرور"></label>
+          <button class="auth-submit" type="submit">دخول إلى المنصة</button>
+          <p class="auth-message" id="loginMessage"></p>
+        </form>
+        <form class="auth-form hidden" id="requestForm">
+          <label>الاسم الكامل<input id="requestName" required placeholder="الاسم الثلاثي"></label>
+          <label>اسم المستخدم المطلوب<input id="requestUsername" required placeholder="مثال: ahmed25"></label>
+          <label>رقم التواصل<input id="requestContact" inputmode="tel" required placeholder="05xxxxxxxx"></label>
+          <label>ملاحظة للمالك<textarea id="requestNote" placeholder="الصف أو المجموعة"></textarea></label>
+          <button class="auth-submit" type="submit">إرسال طلب التسجيل</button>
+          <p class="auth-message" id="requestMessage"></p>
+        </form>
+      </div>
+    </div>
+  </section>
+  <div class="app-shell hidden" id="appShell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><span class="brand-mark">ص</span><div><strong>صَيْف</strong><small>نادي المغامرين</small></div></div>
+      <nav class="main-nav" aria-label="التنقل الرئيسي">
+        <button class="nav-item active" data-page="home"><span>⌂</span>الرئيسية</button>
+        <button class="nav-item" data-page="journey"><span>⌁</span>رحلتي</button>
+        <button class="nav-item" data-page="competitions"><span>⚑</span>المسابقات</button>
+        <button class="nav-item" data-page="episodes"><span>▶</span>الحلقات</button>
+        <button class="nav-item" data-page="games"><span>◆</span>الألعاب</button>
+        <button class="nav-item" data-page="store"><span>▣</span>المتجر</button>
+        <button class="nav-item" data-page="posts"><span>✎</span>المنشورات</button>
+      </nav>
+      <div class="owner-entry"><small>إدارة المنصة</small><button class="nav-item" data-page="owner"><span>⚙</span>لوحة المالك</button></div>
+      <div class="sidebar-profile"><div class="avatar" id="sidebarAvatar">م</div><div><strong id="sidebarName">المستخدم</strong><small id="sidebarRole">مستفيد</small></div><button class="icon-button logout-button" id="logoutButton" title="تسجيل الخروج">↪</button></div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar">
+        <button class="menu-button icon-button" id="menuButton" title="فتح القائمة">☰</button>
+        <div class="page-title"><span class="eyebrow" id="pageGreeting">مرحبًا بك</span><h1 id="pageTitle">جاهز لمغامرة جديدة؟</h1></div>
+        <div class="top-actions">
+          <button class="points-pill" data-page="store" title="الانتقال إلى المتجر"><span class="coin">★</span><strong id="headerPoints">2,480</strong><small>نقطة</small></button>
+          <button class="notification-button icon-button" title="الإشعارات">♢<i>3</i></button><div class="avatar avatar-small" id="topAvatar">م</div>
+        </div>
+      </header>
+      <div class="page-container">
+        <section class="page active" id="homePage">
+          <div class="hero-grid">
+            <article class="welcome-panel">
+              <img class="summer-hero-art" src="assets/summer-adventure.png" alt="أطفال في مغامرة تعليمية صيفية مرحة">
+              <div class="welcome-copy"><span class="status-badge">☀️ يوم جديد في مخيم صيف</span><h2>المرح بدأ...<br>والنجوم تنتظرك!</h2><p>حل تحدي اليوم، اضحك مع الأصدقاء، واجمع نجومًا تفتح لك مفاجآت جديدة.</p><button class="primary-button" data-page="journey">ابدأ المغامرة <span>←</span></button></div>
+              <div class="level-orbit" aria-label="المستوى الحالي 8"><div class="orbit-ring"></div><div class="level-core"><small>مستواك</small><strong>8</strong></div><span class="orbit-star star-one">★</span><span class="orbit-star star-two">✦</span></div>
+            </article>
+            <article class="daily-card">
+              <div class="card-heading"><div><span class="eyebrow">مهمة الشمس</span><h3>هل تهزم ساعة البطيخ؟</h3></div><span class="reward-chip">+120 ★</span></div>
+              <div class="daily-icon">🍉</div><p>10 أسئلة خفيفة وسريعة قبل أن تذوب المثلجات!</p><div class="mini-progress"><span style="width:30%"></span></div><div class="daily-meta"><span>3 من 10</span><span>00:42 ⏱</span></div><button class="dark-button" id="startChallenge">يلا نبدأ!</button>
+            </article>
+          </div>
+          <div class="section-heading"><div><span class="eyebrow">تقدمك هذا الأسبوع</span><h2>رحلة الإنجاز</h2></div><button class="text-button" data-page="journey">عرض الخريطة كاملة ←</button></div>
+          <section class="journey-preview">
+            <img src="assets/learning-world.png" alt="خريطة عالم التعلم"><div class="map-overlay"></div>
+            <button class="stage-marker stage-1 completed" onclick="showStage(1)"><span>✓</span><b>بداية الرحلة</b></button>
+            <button class="stage-marker stage-2 completed" onclick="showStage(2)"><span>✓</span><b>حديقة المعرفة</b></button>
+            <button class="stage-marker stage-3 current" onclick="showStage(3)"><span>3</span><b>مرصد العلوم</b></button>
+            <button class="stage-marker stage-4 locked" onclick="showStage(4)"><span>🔒</span><b>جزيرة الإبداع</b></button>
+            <div class="map-stats"><div><strong>68%</strong><span>نسبة الإنجاز</span></div><div><strong>18</strong><span>مهمة مكتملة</span></div><div><strong>6</strong><span>شارات مكتسبة</span></div></div>
+          </section>
+          <div class="section-heading"><div><span class="eyebrow">اختر مغامرتك</span><h2>استكشف المنصة</h2></div></div>
+          <div class="feature-grid">
+            <button class="feature-card competitions-card" data-page="competitions"><span class="feature-icon">⚑</span><small>تنافس وتحدَّ</small><strong>المسابقات</strong><b>5 مسابقات متاحة</b></button>
+            <button class="feature-card episodes-card" data-page="episodes"><span class="feature-icon">▶</span><small>شاهد وتعلّم</small><strong>الحلقات</strong><b>12 حلقة جديدة</b></button>
+            <button class="feature-card games-card" data-page="games"><span class="feature-icon">◆</span><small>العب واكتشف</small><strong>الألعاب</strong><b>4 ألعاب بانتظارك</b></button>
+            <button class="feature-card store-card" data-page="store"><span class="feature-icon">★</span><small>كافئ إنجازك</small><strong>المتجر</strong><b>تسوّق بنقاطك</b></button>
+          </div>
+        </section>
+        <section class="page" id="journeyPage"></section><section class="page" id="competitionsPage"></section><section class="page" id="episodesPage"></section><section class="page" id="gamesPage"></section><section class="page" id="storePage"></section><section class="page" id="postsPage"></section><section class="page" id="ownerPage"></section>
+      </div>
+    </main>
+  </div>
+  <div class="modal-backdrop" id="modalBackdrop"><div class="modal" id="modalContent"></div></div><div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
