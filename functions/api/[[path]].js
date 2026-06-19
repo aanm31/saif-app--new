@@ -102,6 +102,36 @@ async function ensureSchema(env) {
   for (const statement of statements) {
     await env.DB.prepare(statement).run();
   }
+  await ensureColumns(env, "users", {
+    password_hash: "TEXT NOT NULL DEFAULT ''",
+    password_salt: "TEXT NOT NULL DEFAULT ''",
+    role: "TEXT NOT NULL DEFAULT 'student'",
+    level: "INTEGER NOT NULL DEFAULT 1",
+    points: "INTEGER NOT NULL DEFAULT 0",
+    status: "TEXT NOT NULL DEFAULT 'active'",
+    created_at: "TEXT NOT NULL DEFAULT ''"
+  });
+  await ensureColumns(env, "registration_requests", {
+    note: "TEXT NOT NULL DEFAULT ''",
+    status: "TEXT NOT NULL DEFAULT 'pending'",
+    created_at: "TEXT NOT NULL DEFAULT ''",
+    reviewed_at: "TEXT"
+  });
+  await ensureColumns(env, "products", {
+    description: "TEXT NOT NULL DEFAULT ''",
+    icon: "TEXT NOT NULL DEFAULT '🎁'",
+    stock: "INTEGER NOT NULL DEFAULT 0",
+    active: "INTEGER NOT NULL DEFAULT 1",
+    created_at: "TEXT NOT NULL DEFAULT ''"
+  });
+}
+
+async function ensureColumns(env, table, definitions) {
+  const { results } = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+  const existing = new Set(results.map(column => column.name));
+  for (const [name, definition] of Object.entries(definitions)) {
+    if (!existing.has(name)) await env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`).run();
+  }
 }
 
 async function login(request, env) {
