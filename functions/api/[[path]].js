@@ -57,6 +57,7 @@ async function setupOwner(request, env) {
   if (!env.SETUP_TOKEN) return json({ error: "سر الإعداد غير مضبوط" }, 503);
   const body = await readJson(request);
   if (body.setupToken !== env.SETUP_TOKEN) return json({ error: "سر الإعداد غير صحيح" }, 403);
+  await archiveLegacyUsersIfNeeded(env);
   await ensureSchema(env);
   const existing = await env.DB.prepare("SELECT id FROM users WHERE role = 'owner' LIMIT 1").first();
   if (existing) return json({ error: "تم إنشاء حساب المالك مسبقًا" }, 409);
@@ -66,6 +67,24 @@ async function setupOwner(request, env) {
   await env.DB.prepare("INSERT INTO users (name, username, password_hash, password_salt, role, level, points) VALUES (?, ?, ?, ?, 'owner', 0, 0)")
     .bind(fields.name, fields.username, password.hash, password.salt).run();
   return json({ ok: true }, 201);
+}
+
+async function archiveLegacyUsersIfNeeded(env) {
+  const table = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").first();
+  if (!table) return;
+  const { results } = await env.DB.prepare("PRAGMA table_info(users)").all();
+  const supported = new Set(["id", "name", "username", "password_hash", "password_salt", "role", "level", "points", "status", "created_at"]);
+  const incompatible = results.some(column => column.notnull && column.dflt_value == null && !supported.has(column.name));
+  if (!incompatible) return;
+  if (results.some(column => column.name === "role")) {
+    const owner = await env.DB.prepare("SELECT id FROM users WHERE role = 'owner' LIMIT 1").first();
+    if (owner) throw new Error("يوجد حساب مالك في جدول قديم؛ أوقفنا الترقية لحماية البيانات");
+  }
+  const suffix = `legacy_${Date.now()}`;
+  for (const tableName of ["purchases", "activity_rewards", "sessions", "users"]) {
+    const exists = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").bind(tableName).first();
+    if (exists) await env.DB.prepare(`ALTER TABLE ${tableName} RENAME TO ${tableName}_${suffix}`).run();
+  }
 }
 
 async function setupStatus(env) {
