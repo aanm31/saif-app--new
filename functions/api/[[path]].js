@@ -288,6 +288,33 @@ async function listRewards(env) {
   return json({ rewards: results });
 }
 
+async function purchaseReward(env, user, rewardId) {
+  if (user.role !== "student") return json({ error: "حساب المالك لا يشتري الجوائز" }, 400);
+  await ensureRewardOrdersSchema(env);
+  const reward = await env.DB.prepare("SELECT id, name, amount FROM rewards WHERE id = ? AND active = 1").bind(rewardId).first();
+  const freshUser = await env.DB.prepare("SELECT points FROM users WHERE id = ? AND status = 'active'").bind(user.id).first();
+  if (!reward) return json({ error: "الجائزة غير متاحة" }, 404);
+  const cost = Math.floor(Number(reward.amount));
+  if (!freshUser || freshUser.points < cost) return json({ error: "رصيدك لا يكفي لشراء هذه الجائزة" }, 409);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE users SET points = points - ? WHERE id = ? AND points >= ?").bind(cost, user.id, cost),
+    env.DB.prepare("INSERT INTO reward_orders (user_id, reward_id, points_paid) VALUES (?, ?, ?)").bind(user.id, reward.id, cost)
+  ]);
+  return json({ ok: true, points: freshUser.points - cost, message: "تم الطلب، ستصلك الجائزة قريبًا" }, 201);
+}
+
+async function listRewardOrders(env) {
+  await ensureRewardOrdersSchema(env);
+  const { results } = await env.DB.prepare("SELECT o.id, o.points_paid, o.status, o.created_at, o.delivered_at, u.name AS user_name, u.username, r.name AS reward_name, r.image AS reward_image FROM reward_orders o JOIN users u ON u.id = o.user_id JOIN rewards r ON r.id = o.reward_id ORDER BY CASE o.status WHEN 'pending' THEN 1 ELSE 2 END, o.created_at DESC").all();
+  return json({ orders: results });
+}
+
+async function markRewardOrderDelivered(env, id) {
+  await ensureRewardOrdersSchema(env);
+  const result = await env.DB.prepare("UPDATE reward_orders SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'").bind(id).run();
+  return result.meta.changes ? json({ ok: true }) : json({ error: "الطلب غير موجود أو تم تسليمه" }, 404);
+}
+
 async function createReward(request, env) {
   await ensureRewardsSchema(env);
   const reward = validateReward(await readJson(request));
@@ -316,14 +343,19 @@ async function ensureRewardsSchema(env) {
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS rewards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, image TEXT NOT NULL, amount REAL NOT NULL CHECK (amount > 0), category TEXT NOT NULL CHECK (category IN ('daily','weekly','grand')), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
 }
 
+async function ensureRewardOrdersSchema(env) {
+  await ensureRewardsSchema(env);
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS reward_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, reward_id INTEGER NOT NULL REFERENCES rewards(id), points_paid INTEGER NOT NULL CHECK (points_paid > 0), status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','delivered')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, delivered_at TEXT)").run();
+}
+
 function validateReward(body) {
-  const name = clean(body.name, 100), image = String(body.image || ""), amount = Number(body.amount);
+  const name = clean(body.name, 100), image = String(body.image || ""), amount = Math.floor(Number(body.amount));
   const category = String(body.category || "");
   if (name.length < 2) return { error: "أدخل اسم الجائزة" };
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) return { error: "أدخل مبلغًا صحيحًا" };
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) return { error: "أدخل تكلفة صحيحة بالنقاط" };
   if (!["daily", "weekly", "grand"].includes(category)) return { error: "اختر تصنيف الجائزة" };
   if (image.length > 900000 || !/^data:image\/(?:png|jpeg|webp);base64,/i.test(image)) return { error: "ارفع صورة PNG أو JPG أو WebP بحجم صغير" };
-  return { name, image, amount: Math.round(amount * 100) / 100, category };
+  return { name, image, amount, category };
 }
 
 async function purchaseProduct(request, env, user) {
