@@ -77,6 +77,16 @@ CREATE TABLE IF NOT EXISTS rewards (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS reward_orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reward_id INTEGER NOT NULL REFERENCES rewards(id),
+  points_paid INTEGER NOT NULL CHECK (points_paid > 0),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  delivered_at TEXT
+);
+
 INSERT OR IGNORE INTO products (id, name, description, price, icon, stock) VALUES
   (1, 'قسيمة مكتبة', 'قسيمة لشراء كتاب من المكتبة', 1200, '📚', 8),
   (2, 'كوب الإنجاز', 'كوب حصري يحمل شعار المنصة', 1800, '🏆', 4),

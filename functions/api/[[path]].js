@@ -31,6 +31,8 @@ export async function onRequest(context) {
     if (method === "POST" && path === "progress/award") return awardProgress(request, env, user);
     if (method === "GET" && path === "products") return listProducts(env);
     if (method === "GET" && path === "rewards") return listRewards(env);
+    const rewardPurchase = path.match(/^rewards\/(\d+)\/purchase$/);
+    if (method === "POST" && rewardPurchase) return purchaseReward(env, user, Number(rewardPurchase[1]));
     if (method === "POST" && path === "store/purchase") return purchaseProduct(request, env, user);
     if (path.startsWith("owner/")) {
       if (user.role !== "owner") return json({ error: "غير مصرح" }, 403);
@@ -39,6 +41,7 @@ export async function onRequest(context) {
       if (method === "POST" && path === "owner/users") return createUser(request, env);
       if (method === "POST" && path === "owner/products") return createProduct(request, env);
       if (method === "POST" && path === "owner/rewards") return createReward(request, env);
+      if (method === "GET" && path === "owner/reward-orders") return listRewardOrders(env);
       const approve = path.match(/^owner\/registration-requests\/(\d+)\/approve$/);
       if (method === "POST" && approve) return approveRequest(request, env, Number(approve[1]));
       const reject = path.match(/^owner\/registration-requests\/(\d+)\/reject$/);
@@ -50,6 +53,8 @@ export async function onRequest(context) {
       const reward = path.match(/^owner\/rewards\/(\d+)$/);
       if (method === "PUT" && reward) return updateReward(request, env, Number(reward[1]));
       if (method === "DELETE" && reward) return deleteReward(env, Number(reward[1]));
+      const deliveredOrder = path.match(/^owner\/reward-orders\/(\d+)\/delivered$/);
+      if (method === "PUT" && deliveredOrder) return markRewardOrderDelivered(env, Number(deliveredOrder[1]));
     }
     return json({ error: "المسار غير موجود" }, 404);
   } catch (error) {
@@ -121,6 +126,7 @@ async function ensureSchema(env) {
     "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', price INTEGER NOT NULL CHECK (price > 0), icon TEXT NOT NULL DEFAULT '🎁', stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), points_paid INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS rewards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, image TEXT NOT NULL, amount REAL NOT NULL CHECK (amount > 0), category TEXT NOT NULL CHECK (category IN ('daily','weekly','grand')), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS reward_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, reward_id INTEGER NOT NULL REFERENCES rewards(id), points_paid INTEGER NOT NULL CHECK (points_paid > 0), status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','delivered')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, delivered_at TEXT)",
     "INSERT OR IGNORE INTO products (id,name,description,price,icon,stock) VALUES (1,'قسيمة مكتبة','قسيمة لشراء كتاب من المكتبة',1200,'📚',8)",
     "INSERT OR IGNORE INTO products (id,name,description,price,icon,stock) VALUES (2,'كوب الإنجاز','كوب حصري يحمل شعار المنصة',1800,'🏆',4)",
     "INSERT OR IGNORE INTO products (id,name,description,price,icon,stock) VALUES (3,'ساعة ذكية','جائزة للمثابرين وأصحاب الهمم',6500,'⌚',2)",
