@@ -40,6 +40,7 @@ export async function onRequest(context) {
     const dailyComplete = path.match(/^daily-challenges\/([a-z-]+)\/complete$/);
     if (method === "POST" && dailyComplete) return completeDailyChallenge(request, env, user, dailyComplete[1]);
     if (method === "POST" && path === "progress/award") return awardProgress(request, env, user);
+    if (method === "GET" && path === "competition-settings") return listCompetitionSettings(env);
     if (method === "GET" && path === "products") return listProducts(env);
     if (method === "GET" && path === "rewards") return listRewards(env);
     const rewardPurchase = path.match(/^rewards\/(\d+)\/purchase$/);
@@ -51,6 +52,7 @@ export async function onRequest(context) {
       if (method === "GET" && path === "owner/users") return listUsers(env);
       if (method === "GET" && path === "owner/achievement-tasks") return listAchievementTasks(env);
       if (method === "GET" && path === "owner/daily-challenge-settings") return listDailyChallengeSettings(env);
+      if (method === "GET" && path === "owner/competition-settings") return listCompetitionSettings(env);
       if (method === "POST" && path === "owner/achievement-tasks") return createAchievementTask(request, env);
       if (method === "POST" && path === "owner/users") return createUser(request, env);
       if (method === "POST" && path === "owner/products") return createProduct(request, env);
@@ -66,6 +68,8 @@ export async function onRequest(context) {
       if (method === "PUT" && achievementTask) return updateAchievementTaskStatus(request, env, Number(achievementTask[1]));
       const challengeSetting = path.match(/^owner\/daily-challenge-settings\/([a-z-]+)$/);
       if (method === "PUT" && challengeSetting) return updateDailyChallengeSetting(request, env, challengeSetting[1]);
+      const competitionSetting = path.match(/^owner\/competition-settings\/(\d+)$/);
+      if (method === "PUT" && competitionSetting) return updateCompetitionSetting(request, env, Number(competitionSetting[1]));
       const removeProduct = path.match(/^owner\/products\/(\d+)$/);
       if (method === "DELETE" && removeProduct) return deleteProduct(env, Number(removeProduct[1]));
       const reward = path.match(/^owner\/rewards\/(\d+)$/);
@@ -148,6 +152,7 @@ async function ensureSchema(env) {
     "CREATE TABLE IF NOT EXISTS daily_challenge_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, challenge_key TEXT NOT NULL, challenge_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'started' CHECK (status IN ('started','completed')), score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0), points INTEGER NOT NULL DEFAULT 0 CHECK (points >= 0), duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0), started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT, UNIQUE(user_id, challenge_key, challenge_date))",
     "CREATE INDEX IF NOT EXISTS daily_attempts_user_date ON daily_challenge_attempts(user_id, challenge_date)",
     "CREATE TABLE IF NOT EXISTS daily_challenge_settings (challenge_key TEXT PRIMARY KEY, max_points INTEGER NOT NULL CHECK (max_points BETWEEN 1 AND 10000), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS competition_settings (competition_id INTEGER PRIMARY KEY CHECK (competition_id BETWEEN 1 AND 6), points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 10000), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS achievement_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL CHECK (category IN ('golden_achievements','golden_fortress','noori','knowledge_station','golden_minute','health_first')), points INTEGER NOT NULL CHECK (points > 0), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)), start_date TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE INDEX IF NOT EXISTS achievement_tasks_active_date ON achievement_tasks(active, start_date)",
     "CREATE TABLE IF NOT EXISTS achievement_completions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, task_id INTEGER NOT NULL REFERENCES achievement_tasks(id), achievement_date TEXT NOT NULL, points INTEGER NOT NULL CHECK (points > 0), completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, task_id, achievement_date))",
@@ -292,7 +297,12 @@ async function deleteUser(env, id, ownerId) {
 async function awardProgress(request, env, user) {
   if (user.role !== "student") return json({ error: "حساب المالك لا يجمع نقاطًا" }, 400);
   const body = await readJson(request), type = String(body.type || ""), id = String(body.id || "");
-  const points = ALLOWED_REWARDS[type]?.[id];
+  let points = ALLOWED_REWARDS[type]?.[id];
+  if (type === "competition") {
+    await ensureCompetitionSettings(env);
+    const setting = await env.DB.prepare("SELECT points FROM competition_settings WHERE competition_id = ?").bind(Number(id)).first();
+    points = Number(setting?.points || points || 0);
+  }
   if (!points) return json({ error: "نشاط غير صالح" }, 400);
   const exists = await env.DB.prepare("SELECT 1 FROM activity_rewards WHERE user_id = ? AND activity_type = ? AND activity_id = ?").bind(user.id, type, id).first();
   if (exists) return json({ error: "تم احتساب هذا النشاط سابقًا" }, 409);
@@ -302,6 +312,27 @@ async function awardProgress(request, env, user) {
   ]);
   const updated = await env.DB.prepare("SELECT points FROM users WHERE id = ?").bind(user.id).first();
   return json({ points: updated.points, awarded: points });
+}
+
+async function ensureCompetitionSettings(env) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS competition_settings (competition_id INTEGER PRIMARY KEY CHECK (competition_id BETWEEN 1 AND 6), points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 10000), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  const defaults = [350,280,400,300,500,650];
+  await env.DB.batch(defaults.map((points, index) => env.DB.prepare("INSERT OR IGNORE INTO competition_settings (competition_id, points) VALUES (?, ?)").bind(index + 1, points)));
+}
+
+async function listCompetitionSettings(env) {
+  await ensureCompetitionSettings(env);
+  const { results } = await env.DB.prepare("SELECT competition_id, points, updated_at FROM competition_settings ORDER BY competition_id").all();
+  return json({ settings: results });
+}
+
+async function updateCompetitionSetting(request, env, id) {
+  if (!Number.isInteger(id) || id < 1 || id > 6) return json({ error: "المسابقة غير موجودة" }, 404);
+  await ensureCompetitionSettings(env);
+  const body = await readJson(request), points = Math.floor(Number(body.points));
+  if (!Number.isInteger(points) || points < 1 || points > 10000) return json({ error: "النقاط يجب أن تكون بين 1 و10000" }, 400);
+  await env.DB.prepare("UPDATE competition_settings SET points = ?, updated_at = CURRENT_TIMESTAMP WHERE competition_id = ?").bind(points, id).run();
+  return json({ ok: true, competitionId: id, points });
 }
 
 function riyadhDate() {
@@ -472,7 +503,7 @@ async function completeDailyChallenge(request, env, user, key) {
   const duration = Math.max(0, Math.min(3600000, Math.floor(Number(body.durationMs) || 0)));
   const setting = await env.DB.prepare("SELECT max_points FROM daily_challenge_settings WHERE challenge_key = ?").bind(key).first();
   const maxPoints = Number(setting?.max_points || 100);
-  const points = Math.max(1, Math.min(maxPoints, Math.round(maxPoints * (0.35 + (score / 100) * 0.65))));
+  const points = Math.max(1, Math.min(maxPoints, Math.round(maxPoints * score / 100)));
   const result = await env.DB.prepare("UPDATE daily_challenge_attempts SET status = 'completed', score = ?, points = ?, duration_ms = ?, completed_at = CURRENT_TIMESTAMP WHERE user_id = ? AND challenge_key = ? AND challenge_date = ? AND status = 'started'").bind(score, points, duration, user.id, key, date).run();
   if (!result.meta.changes) return json({ error: "لا توجد محاولة مفتوحة لهذا التحدي" }, 409);
   await env.DB.prepare("UPDATE users SET points = points + ? WHERE id = ?").bind(points, user.id).run();

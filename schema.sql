@@ -115,6 +115,15 @@ INSERT OR IGNORE INTO daily_challenge_settings (challenge_key, max_points) VALUE
   ('image-puzzle', 130), ('password', 100), ('scrambled-letters', 140),
   ('differences', 120), ('memory', 110), ('maze', 130), ('hidden-treasure', 150);
 
+CREATE TABLE IF NOT EXISTS competition_settings (
+  competition_id INTEGER PRIMARY KEY CHECK (competition_id BETWEEN 1 AND 6),
+  points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 10000),
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO competition_settings (competition_id, points) VALUES
+  (1, 350), (2, 280), (3, 400), (4, 300), (5, 500), (6, 650);
+
 CREATE TABLE IF NOT EXISTS achievement_tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
