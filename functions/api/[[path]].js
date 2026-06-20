@@ -30,6 +30,7 @@ export async function onRequest(context) {
 
     if (method === "POST" && path === "progress/award") return awardProgress(request, env, user);
     if (method === "GET" && path === "products") return listProducts(env);
+    if (method === "GET" && path === "rewards") return listRewards(env);
     if (method === "POST" && path === "store/purchase") return purchaseProduct(request, env, user);
     if (path.startsWith("owner/")) {
       if (user.role !== "owner") return json({ error: "غير مصرح" }, 403);
@@ -37,6 +38,7 @@ export async function onRequest(context) {
       if (method === "GET" && path === "owner/users") return listUsers(env);
       if (method === "POST" && path === "owner/users") return createUser(request, env);
       if (method === "POST" && path === "owner/products") return createProduct(request, env);
+      if (method === "POST" && path === "owner/rewards") return createReward(request, env);
       const approve = path.match(/^owner\/registration-requests\/(\d+)\/approve$/);
       if (method === "POST" && approve) return approveRequest(request, env, Number(approve[1]));
       const reject = path.match(/^owner\/registration-requests\/(\d+)\/reject$/);
@@ -45,6 +47,9 @@ export async function onRequest(context) {
       if (method === "DELETE" && remove) return deleteUser(env, Number(remove[1]), user.id);
       const removeProduct = path.match(/^owner\/products\/(\d+)$/);
       if (method === "DELETE" && removeProduct) return deleteProduct(env, Number(removeProduct[1]));
+      const reward = path.match(/^owner\/rewards\/(\d+)$/);
+      if (method === "PUT" && reward) return updateReward(request, env, Number(reward[1]));
+      if (method === "DELETE" && reward) return deleteReward(env, Number(reward[1]));
     }
     return json({ error: "المسار غير موجود" }, 404);
   } catch (error) {
@@ -115,6 +120,7 @@ async function ensureSchema(env) {
     "CREATE TABLE IF NOT EXISTS activity_rewards (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, activity_type TEXT NOT NULL, activity_id TEXT NOT NULL, points INTEGER NOT NULL CHECK (points > 0), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, activity_type, activity_id))",
     "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', price INTEGER NOT NULL CHECK (price > 0), icon TEXT NOT NULL DEFAULT '🎁', stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), points_paid INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS rewards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, image TEXT NOT NULL, amount REAL NOT NULL CHECK (amount > 0), category TEXT NOT NULL CHECK (category IN ('daily','weekly','grand')), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "INSERT OR IGNORE INTO products (id,name,description,price,icon,stock) VALUES (1,'قسيمة مكتبة','قسيمة لشراء كتاب من المكتبة',1200,'📚',8)",
     "INSERT OR IGNORE INTO products (id,name,description,price,icon,stock) VALUES (2,'كوب الإنجاز','كوب حصري يحمل شعار المنصة',1800,'🏆',4)",
     "INSERT OR IGNORE INTO products (id,name,description,price,icon,stock) VALUES (3,'ساعة ذكية','جائزة للمثابرين وأصحاب الهمم',6500,'⌚',2)",
@@ -268,6 +274,50 @@ async function awardProgress(request, env, user) {
 async function listProducts(env) {
   const { results } = await env.DB.prepare("SELECT id, name, description, price, icon, stock FROM products WHERE active = 1 ORDER BY id").all();
   return json({ products: results });
+}
+
+async function listRewards(env) {
+  await ensureRewardsSchema(env);
+  const { results } = await env.DB.prepare("SELECT id, name, image, amount, category FROM rewards WHERE active = 1 ORDER BY CASE category WHEN 'daily' THEN 1 WHEN 'weekly' THEN 2 ELSE 3 END, id DESC").all();
+  return json({ rewards: results });
+}
+
+async function createReward(request, env) {
+  await ensureRewardsSchema(env);
+  const reward = validateReward(await readJson(request));
+  if (reward.error) return json({ error: reward.error }, 400);
+  const result = await env.DB.prepare("INSERT INTO rewards (name, image, amount, category) VALUES (?, ?, ?, ?)")
+    .bind(reward.name, reward.image, reward.amount, reward.category).run();
+  return json({ id: result.meta.last_row_id }, 201);
+}
+
+async function updateReward(request, env, id) {
+  await ensureRewardsSchema(env);
+  const reward = validateReward(await readJson(request));
+  if (reward.error) return json({ error: reward.error }, 400);
+  const result = await env.DB.prepare("UPDATE rewards SET name = ?, image = ?, amount = ?, category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND active = 1")
+    .bind(reward.name, reward.image, reward.amount, reward.category, id).run();
+  return result.meta.changes ? json({ ok: true }) : json({ error: "الجائزة غير موجودة" }, 404);
+}
+
+async function deleteReward(env, id) {
+  await ensureRewardsSchema(env);
+  const result = await env.DB.prepare("UPDATE rewards SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id).run();
+  return result.meta.changes ? json({ ok: true }) : json({ error: "الجائزة غير موجودة" }, 404);
+}
+
+async function ensureRewardsSchema(env) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS rewards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, image TEXT NOT NULL, amount REAL NOT NULL CHECK (amount > 0), category TEXT NOT NULL CHECK (category IN ('daily','weekly','grand')), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+}
+
+function validateReward(body) {
+  const name = clean(body.name, 100), image = String(body.image || ""), amount = Number(body.amount);
+  const category = String(body.category || "");
+  if (name.length < 2) return { error: "أدخل اسم الجائزة" };
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) return { error: "أدخل مبلغًا صحيحًا" };
+  if (!["daily", "weekly", "grand"].includes(category)) return { error: "اختر تصنيف الجائزة" };
+  if (image.length > 900000 || !/^data:image\/(?:png|jpeg|webp);base64,/i.test(image)) return { error: "ارفع صورة PNG أو JPG أو WebP بحجم صغير" };
+  return { name, image, amount: Math.round(amount * 100) / 100, category };
 }
 
 async function purchaseProduct(request, env, user) {
