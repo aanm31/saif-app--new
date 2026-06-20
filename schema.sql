@@ -87,6 +87,60 @@ CREATE TABLE IF NOT EXISTS reward_orders (
   delivered_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS daily_challenge_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  challenge_key TEXT NOT NULL,
+  challenge_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'started' CHECK (status IN ('started', 'completed')),
+  score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0),
+  points INTEGER NOT NULL DEFAULT 0 CHECK (points >= 0),
+  duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0),
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TEXT,
+  UNIQUE(user_id, challenge_key, challenge_date)
+);
+
+CREATE INDEX IF NOT EXISTS daily_attempts_user_date
+ON daily_challenge_attempts(user_id, challenge_date);
+
+CREATE TABLE IF NOT EXISTS achievement_tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL CHECK (category IN ('golden_achievements', 'golden_fortress', 'noori', 'knowledge_station', 'golden_minute', 'health_first')),
+  points INTEGER NOT NULL CHECK (points > 0),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  start_date TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS achievement_tasks_active_date
+ON achievement_tasks(active, start_date);
+
+CREATE TABLE IF NOT EXISTS achievement_completions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  task_id INTEGER NOT NULL REFERENCES achievement_tasks(id),
+  achievement_date TEXT NOT NULL,
+  points INTEGER NOT NULL CHECK (points > 0),
+  completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, task_id, achievement_date)
+);
+
+CREATE INDEX IF NOT EXISTS achievement_completions_user_date
+ON achievement_completions(user_id, achievement_date);
+
+CREATE INDEX IF NOT EXISTS achievement_completions_date_points
+ON achievement_completions(achievement_date, points);
+
+CREATE TRIGGER IF NOT EXISTS achievement_completion_add_points
+AFTER INSERT ON achievement_completions
+BEGIN
+  UPDATE users SET points = points + NEW.points WHERE id = NEW.user_id;
+END;
+
 INSERT OR IGNORE INTO products (id, name, description, price, icon, stock) VALUES
   (1, 'قسيمة مكتبة', 'قسيمة لشراء كتاب من المكتبة', 1200, '📚', 8),
   (2, 'كوب الإنجاز', 'كوب حصري يحمل شعار المنصة', 1800, '🏆', 4),
