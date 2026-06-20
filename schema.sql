@@ -104,6 +104,17 @@ CREATE TABLE IF NOT EXISTS daily_challenge_attempts (
 CREATE INDEX IF NOT EXISTS daily_attempts_user_date
 ON daily_challenge_attempts(user_id, challenge_date);
 
+CREATE TABLE IF NOT EXISTS daily_challenge_settings (
+  challenge_key TEXT PRIMARY KEY,
+  max_points INTEGER NOT NULL CHECK (max_points BETWEEN 1 AND 10000),
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO daily_challenge_settings (challenge_key, max_points) VALUES
+  ('fast-answer', 150), ('character', 120), ('blurred-image', 110),
+  ('image-puzzle', 130), ('password', 100), ('scrambled-letters', 140),
+  ('differences', 120), ('memory', 110), ('maze', 130), ('hidden-treasure', 150);
+
 CREATE TABLE IF NOT EXISTS achievement_tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,

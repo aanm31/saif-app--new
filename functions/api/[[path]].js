@@ -50,6 +50,7 @@ export async function onRequest(context) {
       if (method === "GET" && path === "owner/registration-requests") return listRequests(env);
       if (method === "GET" && path === "owner/users") return listUsers(env);
       if (method === "GET" && path === "owner/achievement-tasks") return listAchievementTasks(env);
+      if (method === "GET" && path === "owner/daily-challenge-settings") return listDailyChallengeSettings(env);
       if (method === "POST" && path === "owner/achievement-tasks") return createAchievementTask(request, env);
       if (method === "POST" && path === "owner/users") return createUser(request, env);
       if (method === "POST" && path === "owner/products") return createProduct(request, env);
@@ -63,6 +64,8 @@ export async function onRequest(context) {
       if (method === "DELETE" && remove) return deleteUser(env, Number(remove[1]), user.id);
       const achievementTask = path.match(/^owner\/achievement-tasks\/(\d+)$/);
       if (method === "PUT" && achievementTask) return updateAchievementTaskStatus(request, env, Number(achievementTask[1]));
+      const challengeSetting = path.match(/^owner\/daily-challenge-settings\/([a-z-]+)$/);
+      if (method === "PUT" && challengeSetting) return updateDailyChallengeSetting(request, env, challengeSetting[1]);
       const removeProduct = path.match(/^owner\/products\/(\d+)$/);
       if (method === "DELETE" && removeProduct) return deleteProduct(env, Number(removeProduct[1]));
       const reward = path.match(/^owner\/rewards\/(\d+)$/);
@@ -144,6 +147,7 @@ async function ensureSchema(env) {
     "CREATE TABLE IF NOT EXISTS reward_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, reward_id INTEGER NOT NULL REFERENCES rewards(id), points_paid INTEGER NOT NULL CHECK (points_paid > 0), status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','delivered')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, delivered_at TEXT)",
     "CREATE TABLE IF NOT EXISTS daily_challenge_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, challenge_key TEXT NOT NULL, challenge_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'started' CHECK (status IN ('started','completed')), score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0), points INTEGER NOT NULL DEFAULT 0 CHECK (points >= 0), duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0), started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT, UNIQUE(user_id, challenge_key, challenge_date))",
     "CREATE INDEX IF NOT EXISTS daily_attempts_user_date ON daily_challenge_attempts(user_id, challenge_date)",
+    "CREATE TABLE IF NOT EXISTS daily_challenge_settings (challenge_key TEXT PRIMARY KEY, max_points INTEGER NOT NULL CHECK (max_points BETWEEN 1 AND 10000), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS achievement_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL CHECK (category IN ('golden_achievements','golden_fortress','noori','knowledge_station','golden_minute','health_first')), points INTEGER NOT NULL CHECK (points > 0), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)), start_date TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE INDEX IF NOT EXISTS achievement_tasks_active_date ON achievement_tasks(active, start_date)",
     "CREATE TABLE IF NOT EXISTS achievement_completions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, task_id INTEGER NOT NULL REFERENCES achievement_tasks(id), achievement_date TEXT NOT NULL, points INTEGER NOT NULL CHECK (points > 0), completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, task_id, achievement_date))",
@@ -309,6 +313,9 @@ function riyadhDate() {
 async function ensureDailyChallengesSchema(env) {
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS daily_challenge_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, challenge_key TEXT NOT NULL, challenge_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'started' CHECK (status IN ('started','completed')), score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0), points INTEGER NOT NULL DEFAULT 0 CHECK (points >= 0), duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0), started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT, UNIQUE(user_id, challenge_key, challenge_date))").run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS daily_attempts_user_date ON daily_challenge_attempts(user_id, challenge_date)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS daily_challenge_settings (challenge_key TEXT PRIMARY KEY, max_points INTEGER NOT NULL CHECK (max_points BETWEEN 1 AND 10000), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  const defaults = {"fast-answer":150,"character":120,"blurred-image":110,"image-puzzle":130,"password":100,"scrambled-letters":140,"differences":120,"memory":110,"maze":130,"hidden-treasure":150};
+  await env.DB.batch(Object.entries(defaults).map(([key, points]) => env.DB.prepare("INSERT OR IGNORE INTO daily_challenge_settings (challenge_key, max_points) VALUES (?, ?)").bind(key, points)));
 }
 
 async function ensureAchievementsSchema(env) {
@@ -421,8 +428,26 @@ async function achievementLeaderboards(env) {
 async function listDailyChallenges(env, user) {
   await ensureDailyChallengesSchema(env);
   const date = riyadhDate();
-  const { results } = await env.DB.prepare("SELECT challenge_key, status, score, points, duration_ms FROM daily_challenge_attempts WHERE user_id = ? AND challenge_date = ?").bind(user.id, date).all();
-  return json({ date, level: user.level || 1, attempts: results });
+  const [attemptRows, settingRows] = await env.DB.batch([
+    env.DB.prepare("SELECT challenge_key, status, score, points, duration_ms FROM daily_challenge_attempts WHERE user_id = ? AND challenge_date = ?").bind(user.id, date),
+    env.DB.prepare("SELECT challenge_key, max_points FROM daily_challenge_settings ORDER BY challenge_key")
+  ]);
+  return json({ date, level: user.level || 1, attempts: attemptRows.results, settings: settingRows.results });
+}
+
+async function listDailyChallengeSettings(env) {
+  await ensureDailyChallengesSchema(env);
+  const { results } = await env.DB.prepare("SELECT challenge_key, max_points, updated_at FROM daily_challenge_settings ORDER BY challenge_key").all();
+  return json({ settings: results });
+}
+
+async function updateDailyChallengeSetting(request, env, key) {
+  if (!DAILY_CHALLENGES.has(key)) return json({ error: "التحدي غير موجود" }, 404);
+  await ensureDailyChallengesSchema(env);
+  const body = await readJson(request), points = Math.floor(Number(body.maxPoints));
+  if (!Number.isInteger(points) || points < 1 || points > 10000) return json({ error: "النقاط يجب أن تكون بين 1 و10000" }, 400);
+  await env.DB.prepare("INSERT INTO daily_challenge_settings (challenge_key, max_points, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(challenge_key) DO UPDATE SET max_points = excluded.max_points, updated_at = CURRENT_TIMESTAMP").bind(key, points).run();
+  return json({ ok: true, challengeKey: key, maxPoints: points });
 }
 
 async function startDailyChallenge(env, user, key) {
@@ -445,8 +470,9 @@ async function completeDailyChallenge(request, env, user, key) {
   const body = await readJson(request), date = riyadhDate();
   const score = Math.max(0, Math.min(100, Math.floor(Number(body.score) || 0)));
   const duration = Math.max(0, Math.min(3600000, Math.floor(Number(body.durationMs) || 0)));
-  const speedBonus = Math.max(0, 40 - Math.floor(duration / 15000));
-  const points = Math.max(5, Math.min(140, score + speedBonus));
+  const setting = await env.DB.prepare("SELECT max_points FROM daily_challenge_settings WHERE challenge_key = ?").bind(key).first();
+  const maxPoints = Number(setting?.max_points || 100);
+  const points = Math.max(1, Math.min(maxPoints, Math.round(maxPoints * (0.35 + (score / 100) * 0.65))));
   const result = await env.DB.prepare("UPDATE daily_challenge_attempts SET status = 'completed', score = ?, points = ?, duration_ms = ?, completed_at = CURRENT_TIMESTAMP WHERE user_id = ? AND challenge_key = ? AND challenge_date = ? AND status = 'started'").bind(score, points, duration, user.id, key, date).run();
   if (!result.meta.changes) return json({ error: "لا توجد محاولة مفتوحة لهذا التحدي" }, 409);
   await env.DB.prepare("UPDATE users SET points = points + ? WHERE id = ?").bind(points, user.id).run();
