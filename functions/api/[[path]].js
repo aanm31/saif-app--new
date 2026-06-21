@@ -6,6 +6,11 @@ const ALLOWED_REWARDS = {
 };
 const DAILY_CHALLENGES = new Set(["fast-answer", "character", "blurred-image", "image-puzzle", "password", "scrambled-letters", "differences", "memory", "maze", "hidden-treasure"]);
 const ACHIEVEMENT_CATEGORIES = new Set(["golden_achievements", "golden_fortress", "noori", "knowledge_station", "golden_minute", "health_first"]);
+const GROUP_GAMES = new Map([
+  ["who-first","من سبق؟"],["dual-battle","المعركة الثنائية"],["finish-first","أكمل قبلي"],["ask-others","اسأل غيرك سؤالاً"],["smartest-survives","البقاء للأذكى"],
+  ["auction","المزاد"],["answer-owner","من صاحب الإجابة؟"],["fix-error","أكمل الخطأ"],["who-said","من قالها؟"],["find-liar","اكتشف الكذاب"],
+  ["mystery-box","الصندوق الغامض"],["three-doors","الأبواب الثلاثة"],["golden-wheel","العجلة الذهبية"],["golden-challenge","التحدي الذهبي"],["million-points","المليون نقطة"]
+]);
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -34,6 +39,10 @@ export async function onRequest(context) {
     if (method === "GET" && path === "manager-instructions") return getManagerInstructions(env);
     if (method === "GET" && path === "achievements") return listAchievements(url, env, user);
     if (method === "GET" && path === "achievements/leaderboards") return achievementLeaderboards(env);
+    if (method === "GET" && path === "game-hub") return getGameHub(env, user);
+    if (method === "POST" && path === "game-matches") return createGameMatch(request, env, user);
+    const gameComplete = path.match(/^game-matches\/(\d+)\/complete$/);
+    if (method === "POST" && gameComplete) return completeGameMatch(request, env, user, Number(gameComplete[1]));
     const achievementComplete = path.match(/^achievements\/(\d+)\/complete$/);
     if (method === "POST" && achievementComplete) return completeAchievement(request, env, user, Number(achievementComplete[1]));
     const dailyStart = path.match(/^daily-challenges\/([a-z-]+)\/start$/);
@@ -50,6 +59,8 @@ export async function onRequest(context) {
     if (method === "POST" && majlisComment) return createMajlisComment(request, env, user, Number(majlisComment[1]));
     const majlisReaction = path.match(/^majlis\/(posts|comments)\/(\d+)\/reaction$/);
     if (method === "POST" && majlisReaction) return setMajlisReaction(request, env, user, majlisReaction[1] === "posts" ? "post" : "comment", Number(majlisReaction[2]));
+    const majlisDelete = path.match(/^majlis\/(posts|comments)\/(\d+)$/);
+    if (method === "DELETE" && majlisDelete) return deleteMajlisItem(env, user, majlisDelete[1] === "posts" ? "post" : "comment", Number(majlisDelete[2]));
     const rewardPurchase = path.match(/^rewards\/(\d+)\/purchase$/);
     if (method === "POST" && rewardPurchase) return purchaseReward(env, user, Number(rewardPurchase[1]));
     if (method === "POST" && path === "store/purchase") return purchaseProduct(request, env, user);
@@ -60,6 +71,7 @@ export async function onRequest(context) {
       if (method === "GET" && path === "owner/achievement-tasks") return listAchievementTasks(env);
       if (method === "GET" && path === "owner/daily-challenge-settings") return listDailyChallengeSettings(env);
       if (method === "GET" && path === "owner/competition-settings") return listCompetitionSettings(env);
+      if (method === "GET" && path === "owner/game-settings") return listGameSettings(env);
       if (method === "GET" && path === "owner/manager-instructions") return getManagerInstructions(env);
       if (method === "PUT" && path === "owner/manager-instructions") return updateManagerInstructions(request, env);
       if (method === "POST" && path === "owner/achievement-tasks") return createAchievementTask(request, env);
@@ -80,6 +92,8 @@ export async function onRequest(context) {
       if (method === "PUT" && challengeSetting) return updateDailyChallengeSetting(request, env, challengeSetting[1]);
       const competitionSetting = path.match(/^owner\/competition-settings\/(\d+)$/);
       if (method === "PUT" && competitionSetting) return updateCompetitionSetting(request, env, Number(competitionSetting[1]));
+      const gameSetting = path.match(/^owner\/game-settings\/(win_points|million_cap)$/);
+      if (method === "PUT" && gameSetting) return updateGameSetting(request, env, gameSetting[1]);
       const removeProduct = path.match(/^owner\/products\/(\d+)$/);
       if (method === "DELETE" && removeProduct) return deleteProduct(env, Number(removeProduct[1]));
       const reward = path.match(/^owner\/rewards\/(\d+)$/);
@@ -154,6 +168,13 @@ async function ensureSchema(env) {
     "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions(user_id)",
     "CREATE INDEX IF NOT EXISTS sessions_expires_at ON sessions(expires_at)",
+    "CREATE TABLE IF NOT EXISTS game_matches (id INTEGER PRIMARY KEY AUTOINCREMENT, game_key TEXT NOT NULL, game_name TEXT NOT NULL, mode TEXT NOT NULL CHECK (mode IN ('individual','teams')), host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, rounds INTEGER NOT NULL CHECK (rounds BETWEEN 1 AND 30), timer_seconds INTEGER NOT NULL DEFAULT 0 CHECK (timer_seconds BETWEEN 0 AND 180), max_bet INTEGER NOT NULL DEFAULT 0 CHECK (max_bet >= 0), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed')), winning_sides TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS game_match_players (match_id INTEGER NOT NULL REFERENCES game_matches(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, side TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0), is_winner INTEGER NOT NULL DEFAULT 0 CHECK (is_winner IN (0,1)), PRIMARY KEY (match_id,user_id))",
+    "CREATE TABLE IF NOT EXISTS game_point_awards (match_id INTEGER NOT NULL REFERENCES game_matches(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, points INTEGER NOT NULL CHECK (points > 0), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (match_id,user_id))",
+    "CREATE TRIGGER IF NOT EXISTS game_award_add_points AFTER INSERT ON game_point_awards BEGIN UPDATE users SET game_points = game_points + NEW.points WHERE id = NEW.user_id; END",
+    "CREATE TABLE IF NOT EXISTS game_settings (setting_key TEXT PRIMARY KEY, setting_value INTEGER NOT NULL CHECK (setting_value > 0), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "INSERT OR IGNORE INTO game_settings (setting_key,setting_value) VALUES ('win_points',100)",
+    "INSERT OR IGNORE INTO game_settings (setting_key,setting_value) VALUES ('million_cap',10000)",
     "CREATE TABLE IF NOT EXISTS activity_rewards (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, activity_type TEXT NOT NULL, activity_id TEXT NOT NULL, points INTEGER NOT NULL CHECK (points > 0), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, activity_type, activity_id))",
     "CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', price INTEGER NOT NULL CHECK (price > 0), icon TEXT NOT NULL DEFAULT '🎁', stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), points_paid INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
@@ -195,6 +216,7 @@ async function ensureSchema(env) {
     role: "TEXT NOT NULL DEFAULT 'student'",
     level: "INTEGER NOT NULL DEFAULT 1",
     points: "INTEGER NOT NULL DEFAULT 0",
+    game_points: "INTEGER NOT NULL DEFAULT 0",
     status: "TEXT NOT NULL DEFAULT 'active'",
     created_at: "TEXT NOT NULL DEFAULT ''"
   });
@@ -572,13 +594,15 @@ async function ensureMajlisSchema(env) {
     env.DB.prepare("CREATE INDEX IF NOT EXISTS majlis_comments_post_id ON majlis_comments(post_id, created_at)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS majlis_reactions_target ON majlis_reactions(target_type, target_id)")
   ]);
+  await ensureColumns(env, "majlis_posts", { image_data: "TEXT NOT NULL DEFAULT ''" });
+  await ensureColumns(env, "majlis_comments", { image_data: "TEXT NOT NULL DEFAULT ''" });
 }
 
 async function listMajlis(env, user) {
   await ensureMajlisSchema(env);
   const [postRows, commentRows, reactionRows] = await env.DB.batch([
-    env.DB.prepare("SELECT p.id, p.user_id, p.content, p.content_type, p.created_at, u.name AS author, u.role, u.level FROM majlis_posts p JOIN users u ON u.id = p.user_id WHERE u.status = 'active' ORDER BY p.created_at DESC, p.id DESC LIMIT 100"),
-    env.DB.prepare("SELECT c.id, c.post_id, c.user_id, c.parent_id, c.content, c.content_type, c.created_at, u.name AS author, u.role, u.level FROM majlis_comments c JOIN users u ON u.id = c.user_id JOIN majlis_posts p ON p.id = c.post_id WHERE u.status = 'active' ORDER BY c.created_at, c.id"),
+    env.DB.prepare("SELECT p.id, p.user_id, p.content, p.content_type, p.image_data, p.created_at, u.name AS author, u.role, u.level FROM majlis_posts p JOIN users u ON u.id = p.user_id WHERE u.status = 'active' ORDER BY p.created_at DESC, p.id DESC LIMIT 100"),
+    env.DB.prepare("SELECT c.id, c.post_id, c.user_id, c.parent_id, c.content, c.content_type, c.image_data, c.created_at, u.name AS author, u.role, u.level FROM majlis_comments c JOIN users u ON u.id = c.user_id JOIN majlis_posts p ON p.id = c.post_id WHERE u.status = 'active' ORDER BY c.created_at, c.id"),
     env.DB.prepare("SELECT target_type, target_id, reaction, COUNT(*) AS count, MAX(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS mine FROM majlis_reactions GROUP BY target_type, target_id, reaction").bind(user.id)
   ]);
   const reactions = {};
@@ -588,21 +612,23 @@ async function listMajlis(env, user) {
     reactions[key][row.reaction] = Number(row.count);
     if (row.mine) reactions[key].mine = row.reaction;
   }
-  return json({ posts: postRows.results, comments: commentRows.results, reactions });
+  return json({ posts: postRows.results.map(item => ({ ...item, can_delete: user.role === "owner" || item.user_id === user.id })), comments: commentRows.results.map(item => ({ ...item, can_delete: user.role === "owner" || item.user_id === user.id })), reactions });
 }
 
 function validateMajlisContent(body) {
   const type = body.type === "sticker" ? "sticker" : "text";
   const content = clean(body.content, type === "sticker" ? 40 : 1200);
-  if (!content) return { error: "اكتب السالفة أو اختر ملصقًا" };
-  return { content, type };
+  const image = String(body.image || "");
+  if (image && (image.length > 700000 || !/^data:image\/(?:png|jpeg|webp);base64,/i.test(image))) return { error: "اختر صورة PNG أو JPG أو WebP بحجم لا يتجاوز 500 كيلوبايت" };
+  if (!content && !image) return { error: "اكتب السالفة أو أضف صورة" };
+  return { content, type, image };
 }
 
 async function createMajlisPost(request, env, user) {
   await ensureMajlisSchema(env);
   const value = validateMajlisContent(await readJson(request));
   if (value.error) return json({ error: value.error }, 400);
-  const result = await env.DB.prepare("INSERT INTO majlis_posts (user_id, content, content_type) VALUES (?, ?, ?)").bind(user.id, value.content, value.type).run();
+  const result = await env.DB.prepare("INSERT INTO majlis_posts (user_id, content, content_type, image_data) VALUES (?, ?, ?, ?)").bind(user.id, value.content, value.type, value.image).run();
   return json({ id: result.meta.last_row_id }, 201);
 }
 
@@ -617,7 +643,7 @@ async function createMajlisComment(request, env, user, postId) {
     const parent = await env.DB.prepare("SELECT id FROM majlis_comments WHERE id = ? AND post_id = ?").bind(parentId, postId).first();
     if (!parent) return json({ error: "التعليق الذي ترد عليه غير موجود" }, 404);
   }
-  const result = await env.DB.prepare("INSERT INTO majlis_comments (post_id, user_id, parent_id, content, content_type) VALUES (?, ?, ?, ?, ?)").bind(postId, user.id, parentId, value.content, value.type).run();
+  const result = await env.DB.prepare("INSERT INTO majlis_comments (post_id, user_id, parent_id, content, content_type, image_data) VALUES (?, ?, ?, ?, ?, ?)").bind(postId, user.id, parentId, value.content, value.type, value.image).run();
   return json({ id: result.meta.last_row_id }, 201);
 }
 
@@ -635,6 +661,24 @@ async function setMajlisReaction(request, env, user, targetType, targetId) {
   }
   await env.DB.prepare("INSERT INTO majlis_reactions (user_id, target_type, target_id, reaction) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, target_type, target_id) DO UPDATE SET reaction = excluded.reaction, created_at = CURRENT_TIMESTAMP").bind(user.id, targetType, targetId, reaction).run();
   return json({ ok: true, reaction });
+}
+
+async function deleteMajlisItem(env, user, targetType, targetId) {
+  await ensureMajlisSchema(env);
+  const table = targetType === "post" ? "majlis_posts" : "majlis_comments";
+  const item = await env.DB.prepare(`SELECT user_id FROM ${table} WHERE id = ?`).bind(targetId).first();
+  if (!item) return json({ error: "المشاركة غير موجودة" }, 404);
+  if (user.role !== "owner" && Number(item.user_id) !== Number(user.id)) return json({ error: "لا يمكنك حذف مشاركة عضو آخر" }, 403);
+  if (targetType === "post") {
+    await env.DB.prepare("DELETE FROM majlis_reactions WHERE target_type = 'comment' AND target_id IN (SELECT id FROM majlis_comments WHERE post_id = ?)").bind(targetId).run();
+  } else {
+    await env.DB.prepare("WITH RECURSIVE descendants(id) AS (SELECT id FROM majlis_comments WHERE id = ? UNION ALL SELECT c.id FROM majlis_comments c JOIN descendants d ON c.parent_id = d.id) DELETE FROM majlis_reactions WHERE target_type = 'comment' AND target_id IN (SELECT id FROM descendants)").bind(targetId).run();
+  }
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM majlis_reactions WHERE target_type = ? AND target_id = ?").bind(targetType, targetId),
+    env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(targetId)
+  ]);
+  return json({ ok: true });
 }
 
 async function listProducts(env) {
@@ -776,6 +820,95 @@ async function updateManagerInstructions(request, env) {
     env.DB.prepare("INSERT INTO site_settings (setting_key, setting_value, updated_at) VALUES ('manager_instructions_body', ?, CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP").bind(instructions)
   ]);
   return json({ ok: true, title, body: instructions });
+}
+
+async function ensureGameSchema(env) {
+  await ensureColumns(env, "users", { game_points: "INTEGER NOT NULL DEFAULT 0" });
+  for (const statement of [
+    "CREATE TABLE IF NOT EXISTS game_matches (id INTEGER PRIMARY KEY AUTOINCREMENT, game_key TEXT NOT NULL, game_name TEXT NOT NULL, mode TEXT NOT NULL CHECK (mode IN ('individual','teams')), host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, rounds INTEGER NOT NULL CHECK (rounds BETWEEN 1 AND 30), timer_seconds INTEGER NOT NULL DEFAULT 0 CHECK (timer_seconds BETWEEN 0 AND 180), max_bet INTEGER NOT NULL DEFAULT 0 CHECK (max_bet >= 0), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed')), winning_sides TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS game_match_players (match_id INTEGER NOT NULL REFERENCES game_matches(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, side TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0), is_winner INTEGER NOT NULL DEFAULT 0 CHECK (is_winner IN (0,1)), PRIMARY KEY (match_id,user_id))",
+    "CREATE TABLE IF NOT EXISTS game_point_awards (match_id INTEGER NOT NULL REFERENCES game_matches(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, points INTEGER NOT NULL CHECK (points > 0), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (match_id,user_id))",
+    "CREATE TRIGGER IF NOT EXISTS game_award_add_points AFTER INSERT ON game_point_awards BEGIN UPDATE users SET game_points = game_points + NEW.points WHERE id = NEW.user_id; END",
+    "CREATE TABLE IF NOT EXISTS game_settings (setting_key TEXT PRIMARY KEY, setting_value INTEGER NOT NULL CHECK (setting_value > 0), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "INSERT OR IGNORE INTO game_settings (setting_key,setting_value) VALUES ('win_points',100)",
+    "INSERT OR IGNORE INTO game_settings (setting_key,setting_value) VALUES ('million_cap',10000)"
+  ]) await env.DB.prepare(statement).run();
+}
+
+async function listGameSettings(env) {
+  await ensureGameSchema(env);
+  const { results } = await env.DB.prepare("SELECT setting_key,setting_value,updated_at FROM game_settings ORDER BY setting_key").all();
+  return json({ settings: results });
+}
+
+async function updateGameSetting(request, env, key) {
+  await ensureGameSchema(env);
+  const body = await readJson(request), value = Math.floor(Number(body.value));
+  const limit = key === "million_cap" ? 1000000 : 10000;
+  if (!Number.isInteger(value) || value < 1 || value > limit) return json({ error: `القيمة يجب أن تكون بين 1 و${limit}` }, 400);
+  await env.DB.prepare("INSERT INTO game_settings (setting_key,setting_value,updated_at) VALUES (?,?,CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_at=CURRENT_TIMESTAMP").bind(key,value).run();
+  return json({ ok: true, key, value });
+}
+
+async function gameHubData(env, user) {
+  const [fresh, users, matches, settings] = await Promise.all([
+    env.DB.prepare("SELECT game_points FROM users WHERE id = ?").bind(user.id).first(),
+    env.DB.prepare("SELECT id,name,level FROM users WHERE role = 'student' AND status = 'active' ORDER BY name").all(),
+    env.DB.prepare("SELECT m.id,m.game_key,m.game_name,m.mode,m.status,m.rounds,m.created_at,COUNT(p.user_id) player_count,GROUP_CONCAT(CASE WHEN p.is_winner=1 THEN u.name END,'، ') winners FROM game_matches m JOIN game_match_players mine ON mine.match_id=m.id AND mine.user_id=? JOIN game_match_players p ON p.match_id=m.id JOIN users u ON u.id=p.user_id GROUP BY m.id ORDER BY m.id DESC LIMIT 12").bind(user.id).all(),
+    env.DB.prepare("SELECT setting_key,setting_value FROM game_settings").all()
+  ]);
+  const config = Object.fromEntries(settings.results.map(row => [row.setting_key, Number(row.setting_value)]));
+  return { balance: Number(fresh?.game_points || 0), users: users.results, matches: matches.results, settings: { winPoints: config.win_points || 100, millionCap: config.million_cap || 10000 } };
+}
+
+async function getGameHub(env, user) {
+  if (user.role !== "student") return json({ error: "الألعاب الجماعية مخصصة للمستفيدين" }, 400);
+  await ensureGameSchema(env);
+  return json(await gameHubData(env, user));
+}
+
+async function createGameMatch(request, env, user) {
+  if (user.role !== "student") return json({ error: "الألعاب الجماعية مخصصة للمستفيدين" }, 400);
+  await ensureGameSchema(env);
+  const body = await readJson(request), gameKey = clean(body.gameKey, 40), mode = body.mode;
+  const rounds = Math.floor(Number(body.rounds)), timer = Math.floor(Number(body.timer || 0)), maxBet = Math.floor(Number(body.maxBet || 0));
+  if (!GROUP_GAMES.has(gameKey) || !["individual","teams"].includes(mode) || rounds < 1 || rounds > 30 || timer < 0 || timer > 180 || maxBet < 0) return json({ error: "إعدادات التحدي غير صحيحة" }, 400);
+  const players = Array.isArray(body.players) ? body.players.map(item => ({ userId: Number(item.userId), side: clean(item.side, 20) })) : [];
+  if (players.length < 2 || players.length > 20 || new Set(players.map(item => item.userId)).size !== players.length || !players.some(item => item.userId === user.id)) return json({ error: "تحقق من قائمة المشاركين" }, 400);
+  if (mode === "individual" && players.some(item => item.side !== String(item.userId))) return json({ error: "إعداد الأفراد غير صحيح" }, 400);
+  if (mode === "teams" && (players.some(item => !["A","B"].includes(item.side)) || players.filter(item => item.side === "A").length < 2 || players.filter(item => item.side === "B").length < 2)) return json({ error: "اختر شخصين على الأقل في كل فريق" }, 400);
+  const ids = players.map(item => item.userId), placeholders = ids.map(() => "?").join(",");
+  const active = await env.DB.prepare(`SELECT id,name FROM users WHERE role='student' AND status='active' AND id IN (${placeholders})`).bind(...ids).all();
+  if (active.results.length !== players.length) return json({ error: "أحد المشاركين غير متاح" }, 409);
+  const result = await env.DB.prepare("INSERT INTO game_matches (game_key,game_name,mode,host_user_id,rounds,timer_seconds,max_bet) VALUES (?,?,?,?,?,?,?)").bind(gameKey, GROUP_GAMES.get(gameKey), mode, user.id, rounds, timer, maxBet).run();
+  const matchId = Number(result.meta.last_row_id);
+  await env.DB.batch(players.map(item => env.DB.prepare("INSERT INTO game_match_players (match_id,user_id,side) VALUES (?,?,?)").bind(matchId,item.userId,item.side)));
+  const names = new Map(active.results.map(item => [Number(item.id), item.name]));
+  const sides = mode === "teams" ? ["A","B"].map(side => ({ key: side, name: side === "A" ? "الفريق الأول" : "الفريق الثاني", members: players.filter(item => item.side === side).map(item => names.get(item.userId)) })) : players.map(item => ({ key: item.side, name: names.get(item.userId), members: [names.get(item.userId)] }));
+  return json({ match: { id: matchId, gameKey, gameName: GROUP_GAMES.get(gameKey), icon: "🧠", mode, rounds, timer, maxBet, sides } }, 201);
+}
+
+async function completeGameMatch(request, env, user, matchId) {
+  await ensureGameSchema(env);
+  const match = await env.DB.prepare("SELECT * FROM game_matches WHERE id=? AND host_user_id=?").bind(matchId,user.id).first();
+  if (!match) return json({ error: "المباراة غير موجودة أو لست منشئها" }, 404);
+  if (match.status === "completed") return json({ error: "تم احتساب نتيجة هذه المباراة مسبقاً" }, 409);
+  const body = await readJson(request), scores = body.scores && typeof body.scores === "object" ? body.scores : {};
+  const roster = await env.DB.prepare("SELECT p.user_id,p.side,u.name FROM game_match_players p JOIN users u ON u.id=p.user_id WHERE p.match_id=?").bind(matchId).all();
+  const sides = [...new Set(roster.results.map(item => item.side))];
+  const cleanScores = Object.fromEntries(sides.map(side => [side, Math.floor(Number(scores[side]))]));
+  if (sides.some(side => !Number.isInteger(cleanScores[side]) || cleanScores[side] < 0 || cleanScores[side] > 10000) || !Object.values(cleanScores).some(Number)) return json({ error: "درجات المباراة غير صحيحة" }, 400);
+  const best = Math.max(...Object.values(cleanScores)), winningSides = sides.filter(side => cleanScores[side] === best);
+  const settingKey = match.game_key === "million-points" ? "million_cap" : "win_points";
+  const setting = await env.DB.prepare("SELECT setting_value FROM game_settings WHERE setting_key=?").bind(settingKey).first();
+  const award = Number(setting?.setting_value || (settingKey === "million_cap" ? 10000 : 100));
+  const winners = roster.results.filter(item => winningSides.includes(item.side));
+  const statements = roster.results.map(item => env.DB.prepare("UPDATE game_match_players SET score=?,is_winner=? WHERE match_id=? AND user_id=?").bind(cleanScores[item.side],winningSides.includes(item.side)?1:0,matchId,item.user_id));
+  statements.push(...winners.map(item => env.DB.prepare("INSERT OR IGNORE INTO game_point_awards (match_id,user_id,points) VALUES (?,?,?)").bind(matchId,item.user_id,award)));
+  statements.push(env.DB.prepare("UPDATE game_matches SET status='completed',winning_sides=?,completed_at=CURRENT_TIMESTAMP WHERE id=? AND status='active'").bind(winningSides.join(","),matchId));
+  await env.DB.batch(statements);
+  const hub = await gameHubData(env,user);
+  return json({ ok: true, awarded: award, winners: winners.map(item => item.name), balance: hub.balance, matches: hub.matches });
 }
 
 async function requireSession(request, env) {
