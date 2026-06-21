@@ -186,5 +186,6 @@ document.querySelectorAll("[data-auth-view]").forEach(tab=>tab.addEventListener(
 document.querySelector("#loginForm").addEventListener("submit",async event=>{event.preventDefault();const message=document.querySelector("#loginMessage");message.textContent="جارٍ تسجيل الدخول...";try{await login(document.querySelector("#loginUsername").value,document.querySelector("#loginPassword").value);message.textContent=""}catch(error){message.textContent=error.message;message.classList.remove("success")}});
 document.querySelector("#requestForm").addEventListener("submit",event=>{event.preventDefault();submitRegistration()});
 document.querySelector("#logoutButton").addEventListener("click",logout);
+document.querySelector("#refreshPageButton").addEventListener("click",()=>window.location.reload());
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeModal()});
 (async function restoreSession(){try{const data=await api("auth/me");currentUser=data.user;showApp()}catch{document.querySelector("#authScreen").classList.remove("hidden")}})();
