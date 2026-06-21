@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS achievement_tasks (
   points INTEGER NOT NULL CHECK (points > 0),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
   start_date TEXT NOT NULL,
+  end_date TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -160,6 +161,41 @@ AFTER INSERT ON achievement_completions
 BEGIN
   UPDATE users SET points = points + NEW.points WHERE id = NEW.user_id;
 END;
+
+CREATE TABLE IF NOT EXISTS majlis_posts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  content_type TEXT NOT NULL DEFAULT 'text' CHECK (content_type IN ('text', 'sticker')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS majlis_posts_created_at ON majlis_posts(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS majlis_comments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  post_id INTEGER NOT NULL REFERENCES majlis_posts(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  parent_id INTEGER REFERENCES majlis_comments(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  content_type TEXT NOT NULL DEFAULT 'text' CHECK (content_type IN ('text', 'sticker')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS majlis_comments_post_id ON majlis_comments(post_id, created_at);
+CREATE INDEX IF NOT EXISTS majlis_comments_parent_id ON majlis_comments(parent_id);
+
+CREATE TABLE IF NOT EXISTS majlis_reactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_type TEXT NOT NULL CHECK (target_type IN ('post', 'comment')),
+  target_id INTEGER NOT NULL,
+  reaction TEXT NOT NULL CHECK (reaction IN ('like', 'dislike', 'laugh')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, target_type, target_id)
+);
+
+CREATE INDEX IF NOT EXISTS majlis_reactions_target ON majlis_reactions(target_type, target_id);
 
 INSERT OR IGNORE INTO products (id, name, description, price, icon, stock) VALUES
   (1, 'قسيمة مكتبة', 'قسيمة لشراء كتاب من المكتبة', 1200, '📚', 8),
