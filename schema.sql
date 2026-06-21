@@ -253,3 +253,34 @@ INSERT OR IGNORE INTO products (id, name, description, price, icon, stock) VALUE
   (4, 'حقيبة صيف', 'حقيبة مرحة للدراسة والمغامرات', 3200, '🎒', 6),
   (5, 'وقت لعب إضافي', '30 دقيقة ألعاب تعليمية إضافية', 600, '🎮', 20),
   (6, 'شارة المستكشف', 'شارة نادرة تظهر في ملفك الشخصي', 900, '🧭', 12);
+
+CREATE TABLE IF NOT EXISTS supervisor_evaluation_questions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  question_text TEXT NOT NULL,
+  score INTEGER NOT NULL DEFAULT 1 CHECK (score >= 1),
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS supervisor_evaluations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  evaluator_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  supervisor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  question_id INTEGER NOT NULL REFERENCES supervisor_evaluation_questions(id),
+  score INTEGER NOT NULL CHECK (score >= 0),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(evaluator_id, supervisor_id, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS supervisor_evaluations_supervisor ON supervisor_evaluations(supervisor_id);
+CREATE INDEX IF NOT EXISTS supervisor_evaluations_evaluator ON supervisor_evaluations(evaluator_id);
+
+CREATE TABLE IF NOT EXISTS supervisor_activity_metrics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supervisor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  metric_key TEXT NOT NULL,
+  metric_value INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(supervisor_id, metric_key)
+);
