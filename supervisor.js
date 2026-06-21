@@ -1,39 +1,4 @@
-let weeklySupervisor = null;
 let hhMatchType = "friendly";
-
-async function loadWeeklySupervisor() {
-  try {
-    const data = await api("supervisor/assign");
-    weeklySupervisor = data.supervisor;
-    state.weeklySupervisorId = data.supervisor?.id || null;
-  } catch {
-    weeklySupervisor = null;
-    state.weeklySupervisorId = null;
-  }
-}
-
-function renderHomeSupervisorSection() {
-  let section = document.querySelector("#homeSupervisorSection");
-  if (!section) {
-    section = document.createElement("section");
-    section.id = "homeSupervisorSection";
-    section.className = "supervisor-weekly-card";
-    const ref = document.querySelector("#managerInstructionsCard");
-    ref?.parentNode?.insertBefore(section, ref.nextSibling);
-  }
-  if (weeklySupervisor) {
-    section.innerHTML = `<div class="supervisor-badge"><span>👑</span><div><strong>مشرف الأسبوع</strong><small>${escapeHtml(weeklySupervisor.name)}</small></div></div>`;
-    section.classList.remove("hidden");
-  } else section.classList.add("hidden");
-}
-
-function renderHomeEvaluationSection() {
-  const section = document.querySelector("#homeEvalSection");
-  if (!section) return;
-  if (currentUser?.role !== "student" || !weeklySupervisor) { section.classList.add("hidden"); return; }
-  section.classList.remove("hidden");
-  section.innerHTML = `<div class="supervisor-eval-card"><span>📋</span><div><strong>تقييم المشرفين</strong><small>قيم مشرف الأسبوع: ${escapeHtml(weeklySupervisor.name)}</small></div><button class="primary-button" onclick="openSupervisorEvaluation()">تقييم</button></div>`;
-}
 
 async function openSupervisorEvaluation() {
   if (!weeklySupervisor) return showToast("لا يوجد مشرف حاليًا");
@@ -197,4 +162,4 @@ renderHeadhunters = function() {
   origRenderHeadhunters();
 };
 
-Object.assign(window, { weeklySupervisor, loadWeeklySupervisor, renderHomeSupervisorSection, renderHomeEvaluationSection, openSupervisorEvaluation, submitSupervisorEvaluation, renderSupervisorKnight, ownerSupervisorSection, assignSupervisor, removeSupervisor, ownerEvalQuestionsSection, loadEvalQuestionsList, openAddEvalQuestion, openEditEvalQuestion, saveEvalQuestion, toggleEvalQuestion, deleteEvalQuestion, showSupervisorHeadhunterDialog, startSupervisorFriendly, startSupervisorOfficial, hhMatchType });
+Object.assign(window, { openSupervisorEvaluation, submitSupervisorEvaluation, renderSupervisorKnight, ownerSupervisorSection, assignSupervisor, removeSupervisor, ownerEvalQuestionsSection, loadEvalQuestionsList, openAddEvalQuestion, openEditEvalQuestion, saveEvalQuestion, toggleEvalQuestion, deleteEvalQuestion, showSupervisorHeadhunterDialog, startSupervisorFriendly, startSupervisorOfficial, hhMatchType });
