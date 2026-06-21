@@ -6,6 +6,7 @@ const ALLOWED_REWARDS = {
 };
 const DAILY_CHALLENGES = new Set(["fast-answer", "character", "blurred-image", "image-puzzle", "password", "scrambled-letters", "differences", "memory", "maze", "hidden-treasure"]);
 const ACHIEVEMENT_CATEGORIES = new Set(["golden_achievements", "golden_fortress", "noori", "knowledge_station", "golden_minute", "health_first"]);
+const EDUCATION_STAGES = new Set(["روضة", "ابتدائي صفوف دنيا", "ابتدائي صفوف عليا", "متوسط", "ثانوي", "موظف"]);
 const GROUP_GAMES = new Map([
   ["who-first","من سبق؟"],["dual-battle","المعركة الثنائية"],["finish-first","أكمل قبلي"],["ask-others","اسأل غيرك سؤالاً"],["smartest-survives","البقاء للأذكى"],
   ["auction","المزاد"],["answer-owner","من صاحب الإجابة؟"],["fix-error","أكمل الخطأ"],["who-said","من قالها؟"],["find-liar","اكتشف الكذاب"],
@@ -37,14 +38,15 @@ export async function onRequest(context) {
 
     if (method === "GET" && path === "daily-challenges") return listDailyChallenges(env, user);
     if (method === "GET" && path === "manager-instructions") return getManagerInstructions(env);
-    if (method === "GET" && path === "achievements") return listAchievements(url, env, user);
+    if (method === "GET" && path === "challenge-race") return getChallengeRace(env);
+    if (method === "GET" && path === "achievements") return listAchievementsV2(url, env, user);
     if (method === "GET" && path === "achievements/leaderboards") return achievementLeaderboards(env);
     if (method === "GET" && path === "game-hub") return getGameHub(env, user);
     if (method === "POST" && path === "game-matches") return createGameMatch(request, env, user);
     const gameComplete = path.match(/^game-matches\/(\d+)\/complete$/);
     if (method === "POST" && gameComplete) return completeGameMatch(request, env, user, Number(gameComplete[1]));
     const achievementComplete = path.match(/^achievements\/(\d+)\/complete$/);
-    if (method === "POST" && achievementComplete) return completeAchievement(request, env, user, Number(achievementComplete[1]));
+    if (method === "POST" && achievementComplete) return completeAchievementV2(request, env, user, Number(achievementComplete[1]));
     const dailyStart = path.match(/^daily-challenges\/([a-z-]+)\/start$/);
     if (method === "POST" && dailyStart) return startDailyChallenge(env, user, dailyStart[1]);
     const dailyComplete = path.match(/^daily-challenges\/([a-z-]+)\/complete$/);
@@ -68,13 +70,17 @@ export async function onRequest(context) {
       if (user.role !== "owner") return json({ error: "غير مصرح" }, 403);
       if (method === "GET" && path === "owner/registration-requests") return listRequests(env);
       if (method === "GET" && path === "owner/users") return listUsers(env);
-      if (method === "GET" && path === "owner/achievement-tasks") return listAchievementTasks(env);
+      if (method === "GET" && path === "owner/achievement-tasks") return listAchievementTasksV2(env);
+      if (method === "GET" && path === "owner/achievement-categories") return listAchievementCategories(env);
       if (method === "GET" && path === "owner/daily-challenge-settings") return listDailyChallengeSettings(env);
       if (method === "GET" && path === "owner/competition-settings") return listCompetitionSettings(env);
       if (method === "GET" && path === "owner/game-settings") return listGameSettings(env);
       if (method === "GET" && path === "owner/manager-instructions") return getManagerInstructions(env);
       if (method === "PUT" && path === "owner/manager-instructions") return updateManagerInstructions(request, env);
-      if (method === "POST" && path === "owner/achievement-tasks") return createAchievementTask(request, env);
+      if (method === "GET" && path === "owner/challenge-race") return getChallengeRace(env);
+      if (method === "PUT" && path === "owner/challenge-race") return updateChallengeRace(request, env);
+      if (method === "POST" && path === "owner/achievement-tasks") return createAchievementTaskV2(request, env);
+      if (method === "POST" && path === "owner/achievement-categories") return createAchievementCategory(request, env);
       if (method === "POST" && path === "owner/users") return createUser(request, env);
       if (method === "POST" && path === "owner/products") return createProduct(request, env);
       if (method === "POST" && path === "owner/rewards") return createReward(request, env);
@@ -87,7 +93,11 @@ export async function onRequest(context) {
       if (method === "PUT" && remove) return updateUser(request, env, Number(remove[1]));
       if (method === "DELETE" && remove) return deleteUser(env, Number(remove[1]), user.id);
       const achievementTask = path.match(/^owner\/achievement-tasks\/(\d+)$/);
-      if (method === "PUT" && achievementTask) return updateAchievementTaskStatus(request, env, Number(achievementTask[1]));
+      if (method === "PUT" && achievementTask) return updateAchievementTask(request, env, Number(achievementTask[1]));
+      if (method === "DELETE" && achievementTask) return deleteAchievementTask(env, Number(achievementTask[1]));
+      const achievementCategory = path.match(/^owner\/achievement-categories\/(\d+)$/);
+      if (method === "PUT" && achievementCategory) return updateAchievementCategory(request, env, Number(achievementCategory[1]));
+      if (method === "DELETE" && achievementCategory) return deleteAchievementCategory(env, Number(achievementCategory[1]));
       const challengeSetting = path.match(/^owner\/daily-challenge-settings\/([a-z-]+)$/);
       if (method === "PUT" && challengeSetting) return updateDailyChallengeSetting(request, env, challengeSetting[1]);
       const competitionSetting = path.match(/^owner\/competition-settings\/(\d+)$/);
@@ -162,8 +172,8 @@ async function setupStatus(env) {
 
 async function ensureSchema(env) {
   const statements = [
-    "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('owner','student')), level INTEGER NOT NULL DEFAULT 1, points INTEGER NOT NULL DEFAULT 0 CHECK (points >= 0), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
-    "CREATE TABLE IF NOT EXISTS registration_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, username TEXT NOT NULL COLLATE NOCASE, contact TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, reviewed_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, password_salt TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('owner','student')), education_stage TEXT NOT NULL DEFAULT '', level INTEGER NOT NULL DEFAULT 1, points INTEGER NOT NULL DEFAULT 0 CHECK (points >= 0), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS registration_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, username TEXT NOT NULL COLLATE NOCASE, contact TEXT NOT NULL, education_stage TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, reviewed_at TEXT)",
     "CREATE UNIQUE INDEX IF NOT EXISTS registration_pending_username ON registration_requests(username) WHERE status = 'pending'",
     "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions(user_id)",
@@ -187,6 +197,7 @@ async function ensureSchema(env) {
     "CREATE TABLE IF NOT EXISTS site_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES ('manager_instructions_title', 'رسالة المدير لك اليوم')",
     "INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES ('manager_instructions_body', 'ابدأ يومك بابتسامة، أكمل مهمة واحدة على الأقل، وشارك أصدقاءك كلمة طيبة. نحن نفخر بك!')",
+    "INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES ('challenge_race_teaser', '0')",
     "CREATE TABLE IF NOT EXISTS achievement_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL CHECK (category IN ('golden_achievements','golden_fortress','noori','knowledge_station','golden_minute','health_first')), points INTEGER NOT NULL CHECK (points > 0), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)), start_date TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE INDEX IF NOT EXISTS achievement_tasks_active_date ON achievement_tasks(active, start_date)",
     "CREATE TABLE IF NOT EXISTS achievement_completions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, task_id INTEGER NOT NULL REFERENCES achievement_tasks(id), achievement_date TEXT NOT NULL, points INTEGER NOT NULL CHECK (points > 0), completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, task_id, achievement_date))",
@@ -214,6 +225,7 @@ async function ensureSchema(env) {
     password_hash: "TEXT NOT NULL DEFAULT ''",
     password_salt: "TEXT NOT NULL DEFAULT ''",
     role: "TEXT NOT NULL DEFAULT 'student'",
+    education_stage: "TEXT NOT NULL DEFAULT ''",
     level: "INTEGER NOT NULL DEFAULT 1",
     points: "INTEGER NOT NULL DEFAULT 0",
     game_points: "INTEGER NOT NULL DEFAULT 0",
@@ -221,6 +233,7 @@ async function ensureSchema(env) {
     created_at: "TEXT NOT NULL DEFAULT ''"
   });
   await ensureColumns(env, "registration_requests", {
+    education_stage: "TEXT NOT NULL DEFAULT ''",
     note: "TEXT NOT NULL DEFAULT ''",
     status: "TEXT NOT NULL DEFAULT 'pending'",
     created_at: "TEXT NOT NULL DEFAULT ''",
@@ -274,19 +287,26 @@ async function getMe(request, env) {
   return json({ user: publicUser(session.user) });
 }
 
+async function ensureRegistrationStage(env) {
+  await ensureColumns(env, "registration_requests", { education_stage: "TEXT NOT NULL DEFAULT ''" });
+  await ensureColumns(env, "users", { education_stage: "TEXT NOT NULL DEFAULT ''" });
+}
+
 async function createRequest(request, env) {
+  await ensureRegistrationStage(env);
   const body = await readJson(request);
   const name = clean(body.name, 80), username = clean(body.username, 40).toLowerCase();
-  const contact = clean(body.contact, 40), note = clean(body.note, 300);
-  if (name.length < 3 || !validUsername(username) || contact.length < 7) return json({ error: "تحقق من بيانات الطلب" }, 400);
+  const contact = clean(body.contact, 40), note = clean(body.note, 300), educationStage = clean(body.educationStage, 40);
+  if (name.length < 3 || !validUsername(username) || contact.length < 7 || !EDUCATION_STAGES.has(educationStage)) return json({ error: "تحقق من بيانات الطلب واختر المرحلة" }, 400);
   const exists = await env.DB.prepare("SELECT 1 FROM users WHERE username = ? UNION SELECT 1 FROM registration_requests WHERE username = ? AND status = 'pending' LIMIT 1").bind(username, username).first();
   if (exists) return json({ error: "اسم المستخدم مستخدم أو لديه طلب سابق" }, 409);
-  await env.DB.prepare("INSERT INTO registration_requests (name, username, contact, note) VALUES (?, ?, ?, ?)").bind(name, username, contact, note).run();
+  await env.DB.prepare("INSERT INTO registration_requests (name, username, contact, education_stage, note) VALUES (?, ?, ?, ?, ?)").bind(name, username, contact, educationStage, note).run();
   return json({ ok: true }, 201);
 }
 
 async function listRequests(env) {
-  const { results } = await env.DB.prepare("SELECT id, name, username, contact, note, status, created_at FROM registration_requests WHERE status = 'pending' ORDER BY created_at DESC").all();
+  await ensureRegistrationStage(env);
+  const { results } = await env.DB.prepare("SELECT id, name, username, contact, education_stage, note, status, created_at FROM registration_requests WHERE status = 'pending' ORDER BY created_at DESC").all();
   return json({ requests: results });
 }
 
@@ -310,6 +330,7 @@ async function createUser(request, env) {
 }
 
 async function approveRequest(request, env, id) {
+  await ensureRegistrationStage(env);
   const pending = await env.DB.prepare("SELECT * FROM registration_requests WHERE id = ? AND status = 'pending'").bind(id).first();
   if (!pending) return json({ error: "الطلب غير موجود" }, 404);
   const body = await readJson(request);
@@ -318,7 +339,7 @@ async function approveRequest(request, env, id) {
   const password = await hashPassword(fields.password);
   try {
     await env.DB.batch([
-      env.DB.prepare("INSERT INTO users (name, username, password_hash, password_salt, role, level, points) VALUES (?, ?, ?, ?, 'student', ?, 0)").bind(fields.name, fields.username, password.hash, password.salt, fields.level),
+      env.DB.prepare("INSERT INTO users (name, username, password_hash, password_salt, role, education_stage, level, points) VALUES (?, ?, ?, ?, 'student', ?, ?, 0)").bind(fields.name, fields.username, password.hash, password.salt, pending.education_stage || "", fields.level),
       env.DB.prepare("UPDATE registration_requests SET status = 'approved', reviewed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'").bind(id)
     ]);
     return json({ ok: true });
@@ -489,6 +510,121 @@ async function updateAchievementTaskStatus(request, env, taskId) {
   if (typeof body.active !== "boolean") return json({ error: "حالة المهمة غير صالحة" }, 400);
   const result = await env.DB.prepare("UPDATE achievement_tasks SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(body.active ? 1 : 0, taskId).run();
   return result.meta.changes ? json({ ok: true }) : json({ error: "المهمة غير موجودة" }, 404);
+}
+
+async function listAchievementsV2(url, env, user) {
+  await ensureAchievementsSchema(env);
+  const today = riyadhDate(), date = String(url.searchParams.get("date") || today);
+  if (!validAchievementDate(date) || date > today) return json({ error: "تاريخ الإنجازات غير صالح" }, 400);
+  const { results } = await env.DB.prepare("SELECT t.id, t.code, t.title, t.description, CAST(t.category_id AS TEXT) AS category, ac.name AS category_name, ac.icon AS category_icon, t.points, t.start_date, t.end_date, CASE WHEN c.id IS NULL THEN 0 ELSE 1 END AS completed, c.completed_at FROM achievement_tasks t JOIN achievement_categories ac ON ac.id = t.category_id LEFT JOIN achievement_completions c ON c.task_id = t.id AND c.user_id = ? AND c.achievement_date = ? WHERE t.deleted_at IS NULL AND t.start_date <= ? AND (t.end_date IS NULL OR t.end_date >= ?) AND (t.active = 1 OR c.id IS NOT NULL) ORDER BY ac.id, t.id").bind(user.id, date, date, date).all();
+  const categories = [...new Map(results.map(task => [task.category, { id: Number(task.category), name: task.category_name, icon: task.category_icon }])).values()];
+  const summary = await env.DB.prepare("SELECT COUNT(*) AS completed_count, COALESCE(SUM(points), 0) AS achievement_points FROM achievement_completions WHERE user_id = ?").bind(user.id).first();
+  const points = Number(summary?.achievement_points || 0);
+  return json({ date, today, categories, tasks: results, summary: { completedCount: Number(summary?.completed_count || 0), points, badges: achievementBadges(points) } });
+}
+
+async function completeAchievementV2(request, env, user, taskId) {
+  if (user.role !== "student") return json({ error: "الإنجازات مخصصة للمستفيدين" }, 400);
+  await ensureAchievementsSchema(env);
+  const body = await readJson(request), date = String(body.date || riyadhDate()), today = riyadhDate();
+  if (!validAchievementDate(date) || date > today) return json({ error: "لا يمكن احتساب إنجاز بتاريخ مستقبلي" }, 400);
+  const task = await env.DB.prepare("SELECT id, points FROM achievement_tasks WHERE id = ? AND deleted_at IS NULL AND active = 1 AND start_date <= ? AND (end_date IS NULL OR end_date >= ?)").bind(taskId, date, date).first();
+  if (!task) return json({ error: "المهمة غير متاحة في هذا التاريخ" }, 404);
+  const result = await env.DB.prepare("INSERT OR IGNORE INTO achievement_completions (user_id, task_id, achievement_date, points) VALUES (?, ?, ?, ?)").bind(user.id, task.id, date, task.points).run();
+  if (!result.meta.changes) return json({ error: "تم احتساب هذا الإنجاز سابقًا" }, 409);
+  const updated = await env.DB.prepare("SELECT points FROM users WHERE id = ?").bind(user.id).first();
+  return json({ ok: true, awarded: Number(task.points), points: Number(updated.points) }, 201);
+}
+
+async function listAchievementTasksV2(env) {
+  await ensureAchievementsSchema(env);
+  const today = riyadhDate();
+  const { results } = await env.DB.prepare("SELECT t.id, t.code, t.title, t.description, t.category_id, ac.name AS category_name, ac.icon AS category_icon, t.points, t.active, t.start_date, t.end_date, t.created_at, CASE WHEN t.active = 0 THEN 'inactive' WHEN t.start_date > ? THEN 'scheduled' WHEN t.end_date IS NOT NULL AND t.end_date < ? THEN 'ended' ELSE 'active' END AS status FROM achievement_tasks t JOIN achievement_categories ac ON ac.id = t.category_id WHERE t.deleted_at IS NULL ORDER BY t.id DESC").bind(today, today).all();
+  const { results: categories } = await env.DB.prepare("SELECT c.id, c.name, c.icon, COUNT(t.id) AS task_count FROM achievement_categories c LEFT JOIN achievement_tasks t ON t.category_id = c.id AND t.deleted_at IS NULL GROUP BY c.id ORDER BY c.id").all();
+  return json({ tasks: results, categories, today });
+}
+
+function validAchievementTaskInput(body) {
+  const value = {
+    title: clean(body.title, 100), description: clean(body.description, 300), code: clean(body.code, 40).toUpperCase(),
+    categoryId: Math.floor(Number(body.categoryId)), points: Math.floor(Number(body.points)),
+    startDate: String(body.startDate || ""), endDate: String(body.endDate || "")
+  };
+  const ok = value.title.length >= 3 && /^[A-Z0-9_-]{2,40}$/.test(value.code) && Number.isInteger(value.categoryId) && Number.isInteger(value.points) && value.points >= 1 && value.points <= 10000 && validAchievementDate(value.startDate) && (!value.endDate || (validAchievementDate(value.endDate) && value.endDate >= value.startDate));
+  return { ok, value };
+}
+
+async function createAchievementTaskV2(request, env) {
+  await ensureAchievementsSchema(env);
+  const { ok, value } = validAchievementTaskInput(await readJson(request));
+  if (!ok) return json({ error: "تحقق من الرمز واسم المهمة والقسم والدرجة والتواريخ" }, 400);
+  const category = await env.DB.prepare("SELECT category_key FROM achievement_categories WHERE id = ?").bind(value.categoryId).first();
+  if (!category) return json({ error: "القسم المحدد غير موجود" }, 400);
+  const duplicate = await env.DB.prepare("SELECT id FROM achievement_tasks WHERE code = ? COLLATE NOCASE AND deleted_at IS NULL").bind(value.code).first();
+  if (duplicate) return json({ error: "رمز المهمة مستخدم مسبقًا" }, 409);
+  const legacyCategory = ACHIEVEMENT_CATEGORIES.has(category.category_key) ? category.category_key : "golden_achievements";
+  const result = await env.DB.prepare("INSERT INTO achievement_tasks (code, title, description, category, category_id, points, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(value.code, value.title, value.description, legacyCategory, value.categoryId, value.points, value.startDate, value.endDate || null).run();
+  return json({ id: result.meta.last_row_id }, 201);
+}
+
+async function updateAchievementTask(request, env, taskId) {
+  await ensureAchievementsSchema(env);
+  const body = await readJson(request);
+  const current = await env.DB.prepare("SELECT id FROM achievement_tasks WHERE id = ? AND deleted_at IS NULL").bind(taskId).first();
+  if (!current) return json({ error: "المهمة غير موجودة" }, 404);
+  if (Object.keys(body).length === 1 && typeof body.active === "boolean") {
+    await env.DB.prepare("UPDATE achievement_tasks SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(body.active ? 1 : 0, taskId).run();
+    return json({ ok: true });
+  }
+  const { ok, value } = validAchievementTaskInput(body);
+  if (!ok) return json({ error: "تحقق من بيانات المهمة" }, 400);
+  const category = await env.DB.prepare("SELECT category_key FROM achievement_categories WHERE id = ?").bind(value.categoryId).first();
+  if (!category) return json({ error: "القسم المحدد غير موجود" }, 400);
+  const duplicate = await env.DB.prepare("SELECT id FROM achievement_tasks WHERE code = ? COLLATE NOCASE AND id <> ? AND deleted_at IS NULL").bind(value.code, taskId).first();
+  if (duplicate) return json({ error: "رمز المهمة مستخدم مسبقًا" }, 409);
+  const legacyCategory = ACHIEVEMENT_CATEGORIES.has(category.category_key) ? category.category_key : "golden_achievements";
+  await env.DB.prepare("UPDATE achievement_tasks SET code = ?, title = ?, description = ?, category = ?, category_id = ?, points = ?, start_date = ?, end_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(value.code, value.title, value.description, legacyCategory, value.categoryId, value.points, value.startDate, value.endDate || null, taskId).run();
+  return json({ ok: true });
+}
+
+async function deleteAchievementTask(env, taskId) {
+  await ensureAchievementsSchema(env);
+  const result = await env.DB.prepare("UPDATE achievement_tasks SET active = 0, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL").bind(taskId).run();
+  return result.meta.changes ? json({ ok: true }) : json({ error: "المهمة غير موجودة" }, 404);
+}
+
+async function listAchievementCategories(env) {
+  await ensureAchievementsSchema(env);
+  const { results } = await env.DB.prepare("SELECT c.id, c.name, c.icon, COUNT(t.id) AS task_count FROM achievement_categories c LEFT JOIN achievement_tasks t ON t.category_id = c.id AND t.deleted_at IS NULL GROUP BY c.id ORDER BY c.id").all();
+  return json({ categories: results });
+}
+
+async function createAchievementCategory(request, env) {
+  await ensureAchievementsSchema(env);
+  const body = await readJson(request), name = clean(body.name, 60), icon = clean(body.icon, 8) || "🏆";
+  if (name.length < 2) return json({ error: "اكتب اسمًا صحيحًا للقسم" }, 400);
+  const exists = await env.DB.prepare("SELECT id FROM achievement_categories WHERE name = ? COLLATE NOCASE").bind(name).first();
+  if (exists) return json({ error: "اسم القسم موجود مسبقًا" }, 409);
+  const result = await env.DB.prepare("INSERT INTO achievement_categories (category_key, name, icon) VALUES (?, ?, ?)").bind(`custom_${Date.now().toString(36)}`, name, icon).run();
+  return json({ id: result.meta.last_row_id }, 201);
+}
+
+async function updateAchievementCategory(request, env, categoryId) {
+  await ensureAchievementsSchema(env);
+  const body = await readJson(request), name = clean(body.name, 60), icon = clean(body.icon, 8) || "🏆";
+  if (name.length < 2) return json({ error: "اكتب اسمًا صحيحًا للقسم" }, 400);
+  const exists = await env.DB.prepare("SELECT id FROM achievement_categories WHERE name = ? COLLATE NOCASE AND id <> ?").bind(name, categoryId).first();
+  if (exists) return json({ error: "اسم القسم موجود مسبقًا" }, 409);
+  const result = await env.DB.prepare("UPDATE achievement_categories SET name = ?, icon = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(name, icon, categoryId).run();
+  return result.meta.changes ? json({ ok: true }) : json({ error: "القسم غير موجود" }, 404);
+}
+
+async function deleteAchievementCategory(env, categoryId) {
+  await ensureAchievementsSchema(env);
+  const used = await env.DB.prepare("SELECT COUNT(*) AS count FROM achievement_tasks WHERE category_id = ? AND deleted_at IS NULL").bind(categoryId).first();
+  if (Number(used?.count || 0) > 0) return json({ error: "لا يمكن حذف قسم مرتبط بمهام قائمة" }, 409);
+  const result = await env.DB.prepare("DELETE FROM achievement_categories WHERE id = ?").bind(categoryId).run();
+  return result.meta.changes ? json({ ok: true }) : json({ error: "القسم غير موجود" }, 404);
 }
 
 function achievementBadges(points) {
@@ -796,6 +932,24 @@ async function ensureSiteSettings(env) {
     env.DB.prepare("INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES ('manager_instructions_title', ?)").bind("رسالة المدير لك اليوم"),
     env.DB.prepare("INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES ('manager_instructions_body', ?)").bind("ابدأ يومك بابتسامة، أكمل مهمة واحدة على الأقل، وشارك أصدقاءك كلمة طيبة. نحن نفخر بك!")
   ]);
+  await env.DB.prepare("INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES ('challenge_race_teaser', '0')").run();
+}
+
+async function getChallengeRace(env) {
+  await ensureSiteSettings(env);
+  const setting = await env.DB.prepare("SELECT setting_value FROM site_settings WHERE setting_key = 'challenge_race_teaser'").first();
+  const teaser = setting?.setting_value === "1";
+  if (teaser) return json({ teaser: true, message: "ترقبوا إعلان الفائز" });
+  const { results } = await env.DB.prepare("SELECT id, name, points FROM users WHERE role = 'student' AND status = 'active' ORDER BY points DESC, name COLLATE NOCASE ASC, id ASC").all();
+  return json({ teaser: false, participants: results.map((participant, index) => ({ ...participant, rank: index + 1 })) });
+}
+
+async function updateChallengeRace(request, env) {
+  await ensureSiteSettings(env);
+  const body = await readJson(request);
+  if (typeof body.teaser !== "boolean") return json({ error: "حالة سباق التحدي غير صحيحة" }, 400);
+  await env.DB.prepare("INSERT INTO site_settings (setting_key, setting_value, updated_at) VALUES ('challenge_race_teaser', ?, CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP").bind(body.teaser ? "1" : "0").run();
+  return json({ ok: true, teaser: body.teaser });
 }
 
 async function getManagerInstructions(env) {
@@ -942,7 +1096,7 @@ function fromBase64Url(value) { const base64 = value.replace(/-/g, "+").replace(
 function constantTime(a, b) { if (a.length !== b.length) return false; let diff = 0; for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i); return diff === 0; }
 function validUsername(value) { return /^[a-z0-9_.-]{3,40}$/i.test(value); }
 function clean(value, max) { return String(value || "").trim().slice(0, max); }
-function publicUser(user) { return { id: user.id, name: user.name, username: user.username, role: user.role, level: user.level, points: user.points }; }
+function publicUser(user) { return { id: user.id, name: user.name, username: user.username, role: user.role, educationStage: user.education_stage || "", level: user.level, points: user.points }; }
 function validOrigin(request, url) { const origin = request.headers.get("Origin"); return !origin || origin === url.origin; }
 function cookie(request, name) { const match = request.headers.get("Cookie")?.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`)); return match ? decodeURIComponent(match[1]) : ""; }
 function sessionCookie(value, maxAge) { return `${SESSION_COOKIE}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`; }

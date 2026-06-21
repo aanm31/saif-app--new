@@ -39,10 +39,11 @@
           <p class="auth-message" id="loginMessage"></p>
         </form>
         <form class="auth-form hidden" id="requestForm">
-          <label>الاسم الكامل<input id="requestName" required placeholder="الاسم الثلاثي"></label>
-          <label>اسم المستخدم المطلوب<input id="requestUsername" required placeholder="مثال: ahmed25"></label>
-          <label>رقم التواصل<input id="requestContact" inputmode="tel" required placeholder="05xxxxxxxx"></label>
-          <label>ملاحظة للمالك<textarea id="requestNote" placeholder="الصف أو المجموعة"></textarea></label>
+          <label>الاسم الكامل<input id="requestName" required minlength="3" maxlength="80" placeholder="الاسم الثلاثي"><small>اكتب اسمك الحقيقي كاملًا كما تريد أن يظهر في المنصة.</small></label>
+          <label>اسم المستخدم المطلوب<input id="requestUsername" required minlength="3" maxlength="40" pattern="[A-Za-z0-9_.-]+" dir="ltr" placeholder="مثال: ahmed25"><small>استخدم حروفًا إنجليزية أو أرقامًا فقط، ويمكن إضافة النقطة أو الشرطة.</small></label>
+          <label>رقم التواصل<input id="requestContact" inputmode="tel" required minlength="7" maxlength="40" placeholder="05xxxxxxxx"><small>اكتب رقمًا صحيحًا يستطيع مالك المنصة التواصل معك من خلاله.</small></label>
+          <label>المرحلة<select id="requestStage" required><option value="" selected disabled>اختر المرحلة</option><option value="روضة">1- روضة</option><option value="ابتدائي صفوف دنيا">2- ابتدائي صفوف دنيا</option><option value="ابتدائي صفوف عليا">3- ابتدائي صفوف عليا</option><option value="متوسط">4- متوسط</option><option value="ثانوي">5- ثانوي</option><option value="موظف">6- موظف</option></select><small>اختر المرحلة الحالية بدقة لتخصيص المحتوى المناسب لك.</small></label>
+          <label>ملاحظة للمالك<textarea id="requestNote" maxlength="300" placeholder="أي معلومات إضافية (اختياري)"></textarea><small>اكتب معلومة تساعد المالك على معرفة طلبك، ويمكن تركها فارغة.</small></label>
           <button class="auth-submit" type="submit">إرسال طلب التسجيل</button>
           <p class="auth-message" id="requestMessage"></p>
         </form>
@@ -50,29 +51,14 @@
     </div>
   </section>
   <div class="app-shell hidden" id="appShell">
-    <aside class="sidebar" id="sidebar">
-      <div class="brand"><span class="brand-mark">ص</span><div><strong>صَيْف</strong><small>نادي المغامرين</small></div></div>
-      <nav class="main-nav" aria-label="التنقل الرئيسي">
-        <button class="nav-item active" data-page="home"><span>⌂</span>الرئيسية</button>
-        <button class="nav-item" data-page="achievements"><span>✓</span>إنجازاتي</button>
-        <button class="nav-item" data-page="journey"><span>⌁</span>رحلتي</button>
-        <button class="nav-item" data-page="competitions"><span>⚑</span>المسابقات</button>
-        <button class="nav-item" data-page="episodes"><span>▶</span>الحلقات</button>
-        <button class="nav-item" data-page="games"><span>✦</span>التحديات</button>
-        <button class="nav-item" data-page="headhunters"><span>🧠</span>مصامخ الرؤوس</button>
-        <button class="nav-item" data-page="store"><span>▣</span>المتجر</button>
-        <button class="nav-item" data-page="posts"><span>☕</span>حي الله من جانا</button>
-      </nav>
-      <div class="owner-entry"><small>إدارة المنصة</small><button class="nav-item" data-page="owner"><span>⚙</span>لوحة المالك</button></div>
-      <div class="sidebar-profile"><div class="avatar" id="sidebarAvatar">م</div><div><strong id="sidebarName">المستخدم</strong><small id="sidebarRole">مستفيد</small></div><button class="icon-button logout-button" id="logoutButton" title="تسجيل الخروج">↪</button></div>
-    </aside>
     <main class="main-content">
       <header class="topbar">
-        <button class="menu-button icon-button" id="menuButton" title="فتح القائمة">☰</button>
+        <button class="home-back-button hidden" id="homeBackButton" data-page="home" title="العودة إلى الرئيسية"><span>⌂</span><b>الرئيسية</b></button>
+        <div class="top-brand"><span class="brand-mark">ص</span><div><strong>صَيْف</strong><small>نادي المغامرين</small></div></div>
         <div class="page-title"><span class="eyebrow" id="pageGreeting">مرحبًا بك</span><h1 id="pageTitle">جاهز لمغامرة جديدة؟</h1></div>
         <div class="top-actions">
           <button class="points-pill" data-page="store" title="الانتقال إلى المتجر"><span class="coin">★</span><strong id="headerPoints">2,480</strong><small>نقطة</small></button>
-          <button class="notification-button icon-button" title="الإشعارات">♢<i>3</i></button><div class="avatar avatar-small" id="topAvatar">م</div>
+          <div class="top-account"><div class="avatar avatar-small" id="topAvatar">م</div><div><strong id="topAccountName">المستخدم</strong><small id="topAccountRole">مستفيد</small></div><button class="top-logout" id="logoutButton" title="تسجيل الخروج"><span>↪</span><b>خروج</b></button></div>
         </div>
       </header>
       <div class="page-container">
@@ -82,10 +68,6 @@
               <img class="summer-hero-art" src="assets/summer-adventure.png" alt="أطفال في مغامرة تعليمية صيفية مرحة">
               <div class="welcome-copy"><span class="status-badge">☀️ يوم جديد في مخيم صيف</span><h2>المرح بدأ...<br>والنجوم تنتظرك!</h2><p>حل تحدي اليوم، اضحك مع الأصدقاء، واجمع نجومًا تفتح لك مفاجآت جديدة.</p><button class="primary-button" data-page="journey">ابدأ المغامرة <span>←</span></button></div>
               <div class="level-orbit" aria-label="المستوى الحالي 8"><div class="orbit-ring"></div><div class="level-core"><small>مستواك</small><strong>8</strong></div><span class="orbit-star star-one">★</span><span class="orbit-star star-two">✦</span></div>
-            </article>
-            <article class="daily-card">
-              <div class="card-heading"><div><span class="eyebrow">مهمة الشمس</span><h3>هل تهزم ساعة البطيخ؟</h3></div><span class="reward-chip">+120 ★</span></div>
-              <div class="daily-icon">🍉</div><p>10 أسئلة خفيفة وسريعة قبل أن تذوب المثلجات!</p><div class="mini-progress"><span style="width:30%"></span></div><div class="daily-meta"><span>3 من 10</span><span>00:42 ⏱</span></div><button class="dark-button" id="startChallenge">يلا نبدأ!</button>
             </article>
           </div>
           <article class="manager-instructions is-loading" id="managerInstructionsCard" aria-labelledby="managerInstructionsTitle">
@@ -107,15 +89,21 @@
             <button class="stage-marker stage-4 locked" onclick="showStage(4)"><span>🔒</span><b>جزيرة الإبداع</b></button>
             <div class="map-stats"><div><strong>68%</strong><span>نسبة الإنجاز</span></div><div><strong>18</strong><span>مهمة مكتملة</span></div><div><strong>6</strong><span>شارات مكتسبة</span></div></div>
           </section>
-          <div class="section-heading"><div><span class="eyebrow">اختر مغامرتك</span><h2>استكشف المنصة</h2></div></div>
-          <div class="feature-grid">
-            <button class="feature-card competitions-card" data-page="competitions"><span class="feature-icon">⚑</span><small>تنافس وتحدَّ</small><strong>المسابقات</strong><b>5 مسابقات متاحة</b></button>
-            <button class="feature-card episodes-card" data-page="episodes"><span class="feature-icon">▶</span><small>شاهد وتعلّم</small><strong>الحلقات</strong><b>12 حلقة جديدة</b></button>
-            <button class="feature-card games-card" data-page="games"><span class="feature-icon">✦</span><small>فكّر، اكتشف، وتفوّق</small><strong>التحديات</strong><b>10 تحديات جديدة كل يوم</b></button>
-            <button class="feature-card store-card" data-page="store"><span class="feature-icon">★</span><small>كافئ إنجازك</small><strong>المتجر</strong><b>تسوّق بنقاطك</b></button>
-          </div>
+          <div class="section-heading home-navigation-heading"><div><span class="eyebrow">كل شيء أمامك</span><h2>إلى أين تريد أن تذهب؟</h2></div></div>
+          <nav class="home-navigation-grid" aria-label="أقسام المنصة">
+            <button class="home-nav-tile tile-achievements" data-page="achievements"><span>✅</span><div><strong>إنجازاتي</strong><small>مهامي وأوسمتي اليومية</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-journey" data-page="journey"><span>🗺️</span><div><strong>رحلتي</strong><small>خريطة تقدمي ومراحلي</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-competitions" data-page="competitions"><span>🏆</span><div><strong>المسابقات</strong><small>شارك وتنافس مع الأصدقاء</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-episodes" data-page="episodes"><span>🎬</span><div><strong>الحلقات</strong><small>شاهد وتعلّم أشياء جديدة</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-games" data-page="games"><span>🎮</span><div><strong>التحديات</strong><small>ألعاب ذكية تتجدد يوميًا</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-headhunters" data-page="headhunters"><span>🧠</span><div><strong>مصامخ الرؤوس</strong><small>أسئلة وتحديات للأذكياء</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-store" data-page="store"><span>🎁</span><div><strong>المتجر</strong><small>استبدل نقاطك بجوائز</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-posts" data-page="posts"><span>☕</span><div><strong>حي الله من جانا</strong><small>شارك أصحابك الأخبار</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-challenge-race" data-page="challengeRace"><span>🏁</span><div><strong>سباق التحدي</strong><small>شاهد ترتيب المتسابقين</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-owner owner-home-tile hidden" data-page="owner"><span>⚙️</span><div><strong>لوحة المالك</strong><small>إدارة المنصة والمستفيدين</small></div><i>←</i></button>
+          </nav>
         </section>
-        <section class="page" id="achievementsPage"></section><section class="page" id="journeyPage"></section><section class="page" id="competitionsPage"></section><section class="page" id="episodesPage"></section><section class="page" id="gamesPage"></section><section class="page" id="headhuntersPage"></section><section class="page" id="storePage"></section><section class="page" id="postsPage"></section><section class="page" id="ownerPage"></section>
+        <section class="page" id="achievementsPage"></section><section class="page" id="journeyPage"></section><section class="page" id="competitionsPage"></section><section class="page" id="episodesPage"></section><section class="page" id="gamesPage"></section><section class="page" id="headhuntersPage"></section><section class="page" id="storePage"></section><section class="page" id="postsPage"></section><section class="page" id="challengeRacePage"></section><section class="page" id="ownerPage"></section>
       </div>
     </main>
   </div>

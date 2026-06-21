@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   password_salt TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('owner', 'student')),
+  education_stage TEXT NOT NULL DEFAULT '',
   level INTEGER NOT NULL DEFAULT 1,
   points INTEGER NOT NULL DEFAULT 0 CHECK (points >= 0),
   game_points INTEGER NOT NULL DEFAULT 0 CHECK (game_points >= 0),
@@ -19,6 +20,7 @@ CREATE TABLE IF NOT EXISTS registration_requests (
   name TEXT NOT NULL,
   username TEXT NOT NULL COLLATE NOCASE,
   contact TEXT NOT NULL,
+  education_stage TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -137,26 +139,53 @@ CREATE TABLE IF NOT EXISTS site_settings (
 
 INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES
   ('manager_instructions_title', 'رسالة المدير لك اليوم'),
-  ('manager_instructions_body', 'ابدأ يومك بابتسامة، أكمل مهمة واحدة على الأقل، وشارك أصدقاءك كلمة طيبة. نحن نفخر بك!');
+  ('manager_instructions_body', 'ابدأ يومك بابتسامة، أكمل مهمة واحدة على الأقل، وشارك أصدقاءك كلمة طيبة. نحن نفخر بك!'),
+  ('challenge_race_teaser', '0');
 
 INSERT OR IGNORE INTO competition_settings (competition_id, points) VALUES
   (1, 350), (2, 280), (3, 400), (4, 300), (5, 500), (6, 650);
 
+CREATE TABLE IF NOT EXISTS achievement_categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_key TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  icon TEXT NOT NULL DEFAULT '🏆',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO achievement_categories (category_key, name, icon) VALUES
+  ('golden_achievements', 'الإنجازات الذهبية', '✨'),
+  ('golden_fortress', 'الحصن الذهبي', '🛡️'),
+  ('noori', 'نوري', '📖'),
+  ('knowledge_station', 'محطة المعرفة', '💡'),
+  ('golden_minute', 'الدقيقة الذهبية', '⏱️'),
+  ('health_first', 'صحتي أولاً', '🌿');
+
 CREATE TABLE IF NOT EXISTS achievement_tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT COLLATE NOCASE,
   title TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   category TEXT NOT NULL CHECK (category IN ('golden_achievements', 'golden_fortress', 'noori', 'knowledge_station', 'golden_minute', 'health_first')),
+  category_id INTEGER REFERENCES achievement_categories(id),
   points INTEGER NOT NULL CHECK (points > 0),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
   start_date TEXT NOT NULL,
   end_date TEXT,
+  deleted_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS achievement_tasks_active_date
 ON achievement_tasks(active, start_date);
+
+CREATE UNIQUE INDEX IF NOT EXISTS achievement_tasks_code_unique
+ON achievement_tasks(code COLLATE NOCASE) WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS achievement_tasks_category_id
+ON achievement_tasks(category_id, deleted_at);
 
 CREATE TABLE IF NOT EXISTS achievement_completions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
