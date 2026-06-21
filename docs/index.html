@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="summer.css">
   <link rel="stylesheet" href="challenge-3d.css">
   <link rel="stylesheet" href="achievements.css">
+  <link rel="stylesheet" href="children-3d.css">
 </head>
 <body>
   <section class="auth-screen" id="authScreen">
@@ -58,7 +59,7 @@
         <button class="nav-item" data-page="episodes"><span>▶</span>الحلقات</button>
         <button class="nav-item" data-page="games"><span>✦</span>التحديات</button>
         <button class="nav-item" data-page="store"><span>▣</span>المتجر</button>
-        <button class="nav-item" data-page="posts"><span>✎</span>المنشورات</button>
+        <button class="nav-item" data-page="posts"><span>☕</span>سواليف المقلط</button>
       </nav>
       <div class="owner-entry"><small>إدارة المنصة</small><button class="nav-item" data-page="owner"><span>⚙</span>لوحة المالك</button></div>
       <div class="sidebar-profile"><div class="avatar" id="sidebarAvatar">م</div><div><strong id="sidebarName">المستخدم</strong><small id="sidebarRole">مستفيد</small></div><button class="icon-button logout-button" id="logoutButton" title="تسجيل الخروج">↪</button></div>
@@ -85,6 +86,16 @@
               <div class="daily-icon">🍉</div><p>10 أسئلة خفيفة وسريعة قبل أن تذوب المثلجات!</p><div class="mini-progress"><span style="width:30%"></span></div><div class="daily-meta"><span>3 من 10</span><span>00:42 ⏱</span></div><button class="dark-button" id="startChallenge">يلا نبدأ!</button>
             </article>
           </div>
+          <article class="manager-instructions is-loading" id="managerInstructionsCard" aria-labelledby="managerInstructionsTitle">
+            <img src="assets/manager-instructions-3d.png" alt="مستكشف صغير يعلن تعليمات المدير في عالم تعليمي ثلاثي الأبعاد">
+            <div class="manager-instructions-copy">
+              <span class="manager-kicker"><i>📣</i> رسالة مهمة من المدير</span>
+              <h2 id="managerInstructionsTitle">رسالة المدير لك اليوم</h2>
+              <p id="managerInstructionsBody">جارٍ تحميل التعليمات...</p>
+              <div class="manager-cheer"><span>⭐ ركّز</span><span>🚀 جرّب</span><span>🏆 أنجز</span></div>
+            </div>
+            <span class="floating-shape shape-star">★</span><span class="floating-shape shape-ball">●</span>
+          </article>
           <div class="section-heading"><div><span class="eyebrow">تقدمك هذا الأسبوع</span><h2>رحلة الإنجاز</h2></div><button class="text-button" data-page="journey">عرض الخريطة كاملة ←</button></div>
           <section class="journey-preview">
             <img src="assets/learning-world.png" alt="خريطة عالم التعلم"><div class="map-overlay"></div>

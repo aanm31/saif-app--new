@@ -121,6 +121,16 @@ CREATE TABLE IF NOT EXISTS competition_settings (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS site_settings (
+  setting_key TEXT PRIMARY KEY,
+  setting_value TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES
+  ('manager_instructions_title', 'رسالة المدير لك اليوم'),
+  ('manager_instructions_body', 'ابدأ يومك بابتسامة، أكمل مهمة واحدة على الأقل، وشارك أصدقاءك كلمة طيبة. نحن نفخر بك!');
+
 INSERT OR IGNORE INTO competition_settings (competition_id, points) VALUES
   (1, 350), (2, 280), (3, 400), (4, 300), (5, 500), (6, 650);
 

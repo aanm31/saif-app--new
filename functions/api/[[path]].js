@@ -31,6 +31,7 @@ export async function onRequest(context) {
     const user = session.user;
 
     if (method === "GET" && path === "daily-challenges") return listDailyChallenges(env, user);
+    if (method === "GET" && path === "manager-instructions") return getManagerInstructions(env);
     if (method === "GET" && path === "achievements") return listAchievements(url, env, user);
     if (method === "GET" && path === "achievements/leaderboards") return achievementLeaderboards(env);
     const achievementComplete = path.match(/^achievements\/(\d+)\/complete$/);
@@ -59,6 +60,8 @@ export async function onRequest(context) {
       if (method === "GET" && path === "owner/achievement-tasks") return listAchievementTasks(env);
       if (method === "GET" && path === "owner/daily-challenge-settings") return listDailyChallengeSettings(env);
       if (method === "GET" && path === "owner/competition-settings") return listCompetitionSettings(env);
+      if (method === "GET" && path === "owner/manager-instructions") return getManagerInstructions(env);
+      if (method === "PUT" && path === "owner/manager-instructions") return updateManagerInstructions(request, env);
       if (method === "POST" && path === "owner/achievement-tasks") return createAchievementTask(request, env);
       if (method === "POST" && path === "owner/users") return createUser(request, env);
       if (method === "POST" && path === "owner/products") return createProduct(request, env);
@@ -160,6 +163,9 @@ async function ensureSchema(env) {
     "CREATE INDEX IF NOT EXISTS daily_attempts_user_date ON daily_challenge_attempts(user_id, challenge_date)",
     "CREATE TABLE IF NOT EXISTS daily_challenge_settings (challenge_key TEXT PRIMARY KEY, max_points INTEGER NOT NULL CHECK (max_points BETWEEN 1 AND 10000), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS competition_settings (competition_id INTEGER PRIMARY KEY CHECK (competition_id BETWEEN 1 AND 6), points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 10000), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS site_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES ('manager_instructions_title', 'رسالة المدير لك اليوم')",
+    "INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES ('manager_instructions_body', 'ابدأ يومك بابتسامة، أكمل مهمة واحدة على الأقل، وشارك أصدقاءك كلمة طيبة. نحن نفخر بك!')",
     "CREATE TABLE IF NOT EXISTS achievement_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL CHECK (category IN ('golden_achievements','golden_fortress','noori','knowledge_station','golden_minute','health_first')), points INTEGER NOT NULL CHECK (points > 0), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)), start_date TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE INDEX IF NOT EXISTS achievement_tasks_active_date ON achievement_tasks(active, start_date)",
     "CREATE TABLE IF NOT EXISTS achievement_completions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, task_id INTEGER NOT NULL REFERENCES achievement_tasks(id), achievement_date TEXT NOT NULL, points INTEGER NOT NULL CHECK (points > 0), completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, task_id, achievement_date))",
@@ -589,7 +595,6 @@ function validateMajlisContent(body) {
   const type = body.type === "sticker" ? "sticker" : "text";
   const content = clean(body.content, type === "sticker" ? 40 : 1200);
   if (!content) return { error: "اكتب السالفة أو اختر ملصقًا" };
-  if (type === "sticker" && !/^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]+$/u.test(content)) return { error: "الملصق غير صالح" };
   return { content, type };
 }
 
@@ -739,6 +744,38 @@ async function createProduct(request, env) {
 async function deleteProduct(env, id) {
   const result = await env.DB.prepare("UPDATE products SET active = 0 WHERE id = ?").bind(id).run();
   return result.meta.changes ? json({ ok: true }) : json({ error: "المنتج غير موجود" }, 404);
+}
+
+async function ensureSiteSettings(env) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS site_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.batch([
+    env.DB.prepare("INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES ('manager_instructions_title', ?)").bind("رسالة المدير لك اليوم"),
+    env.DB.prepare("INSERT OR IGNORE INTO site_settings (setting_key, setting_value) VALUES ('manager_instructions_body', ?)").bind("ابدأ يومك بابتسامة، أكمل مهمة واحدة على الأقل، وشارك أصدقاءك كلمة طيبة. نحن نفخر بك!")
+  ]);
+}
+
+async function getManagerInstructions(env) {
+  await ensureSiteSettings(env);
+  const { results } = await env.DB.prepare("SELECT setting_key, setting_value, updated_at FROM site_settings WHERE setting_key IN ('manager_instructions_title','manager_instructions_body')").all();
+  const values = Object.fromEntries(results.map(row => [row.setting_key, row.setting_value]));
+  return json({
+    title: values.manager_instructions_title || "رسالة المدير لك اليوم",
+    body: values.manager_instructions_body || "",
+    updatedAt: results.map(row => row.updated_at).sort().at(-1) || null
+  });
+}
+
+async function updateManagerInstructions(request, env) {
+  await ensureSiteSettings(env);
+  const body = await readJson(request);
+  const title = clean(body.title, 90), instructions = clean(body.body, 700);
+  if (title.length < 3) return json({ error: "اكتب عنوانًا واضحًا للتعليمات" }, 400);
+  if (instructions.length < 3) return json({ error: "اكتب تعليمات المدير" }, 400);
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO site_settings (setting_key, setting_value, updated_at) VALUES ('manager_instructions_title', ?, CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP").bind(title),
+    env.DB.prepare("INSERT INTO site_settings (setting_key, setting_value, updated_at) VALUES ('manager_instructions_body', ?, CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP").bind(instructions)
+  ]);
+  return json({ ok: true, title, body: instructions });
 }
 
 async function requireSession(request, env) {
