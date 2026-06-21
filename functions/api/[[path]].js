@@ -297,11 +297,21 @@ async function createRequest(request, env) {
   const body = await readJson(request);
   const name = clean(body.name, 80), username = clean(body.username, 40).toLowerCase();
   const contact = clean(body.contact, 40), note = clean(body.note, 300), educationStage = clean(body.educationStage, 40);
-  if (name.length < 3 || !validUsername(username) || contact.length < 7 || !EDUCATION_STAGES.has(educationStage)) return json({ error: "تحقق من بيانات الطلب واختر المرحلة" }, 400);
-  const exists = await env.DB.prepare("SELECT 1 FROM users WHERE username = ? UNION SELECT 1 FROM registration_requests WHERE username = ? AND status = 'pending' LIMIT 1").bind(username, username).first();
-  if (exists) return json({ error: "اسم المستخدم مستخدم أو لديه طلب سابق" }, 409);
-  await env.DB.prepare("INSERT INTO registration_requests (name, username, contact, education_stage, note) VALUES (?, ?, ?, ?, ?)").bind(name, username, contact, educationStage, note).run();
-  return json({ ok: true }, 201);
+  const password = String(body.password || ""), confirmPassword = String(body.confirmPassword || "");
+  if (name.length < 3 || !validUsername(username) || contact.length < 7 || !EDUCATION_STAGES.has(educationStage)) return json({ error: "تحقق من بيانات التسجيل واختر المرحلة" }, 400);
+  if (password.length < 8 || password.length > 128) return json({ error: "كلمة المرور يجب أن تكون 8 أحرف على الأقل" }, 400);
+  if (password !== confirmPassword) return json({ error: "كلمتا المرور غير متطابقتين" }, 400);
+  const exists = await env.DB.prepare("SELECT 1 FROM users WHERE username = ? LIMIT 1").bind(username).first();
+  if (exists) return json({ error: "اسم المستخدم مستخدم، اختر اسمًا آخر" }, 409);
+  const passwordData = await hashPassword(password);
+  await env.DB.prepare("INSERT INTO users (name, username, password_hash, password_salt, role, level, points, education_stage) VALUES (?, ?, ?, ?, 'student', 1, 0, ?)").bind(name, username, passwordData.hash, passwordData.salt, educationStage).run();
+  const user = await env.DB.prepare("SELECT * FROM users WHERE username = ?").bind(username).first();
+  const sessionId = randomToken(32), expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)").bind(await sha256(sessionId), user.id, expires),
+    env.DB.prepare("INSERT INTO registration_requests (name, username, contact, education_stage, note, status, reviewed_at) VALUES (?, ?, ?, ?, ?, 'approved', CURRENT_TIMESTAMP)").bind(name, username, contact, educationStage, note)
+  ]);
+  return json({ user: publicUser(user) }, 201, { "Set-Cookie": sessionCookie(sessionId, SESSION_DAYS * 86400) });
 }
 
 async function listRequests(env) {

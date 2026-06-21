@@ -30,7 +30,7 @@
         <div class="auth-heading"><span class="auth-logo">ص</span><div><h2 id="authTitle">أهلًا بالمغامر!</h2><p id="authSubtitle">أدخل بياناتك وابدأ يومًا صيفيًا جديدًا</p></div></div>
         <div class="auth-tabs" role="tablist">
           <button class="auth-tab active" data-auth-view="login">تسجيل الدخول</button>
-          <button class="auth-tab" data-auth-view="request">طلب حساب</button>
+          <button class="auth-tab" data-auth-view="request">إنشاء حساب</button>
         </div>
         <form class="auth-form" id="loginForm">
           <label>اسم المستخدم<input id="loginUsername" autocomplete="username" required placeholder="أدخل اسم المستخدم"></label>
@@ -43,8 +43,10 @@
           <label>اسم المستخدم المطلوب<input id="requestUsername" required minlength="3" maxlength="40" pattern="[A-Za-z0-9_.-]+" dir="ltr" placeholder="مثال: ahmed25"><small>استخدم حروفًا إنجليزية أو أرقامًا فقط، ويمكن إضافة النقطة أو الشرطة.</small></label>
           <label>رقم التواصل<input id="requestContact" inputmode="tel" required minlength="7" maxlength="40" placeholder="05xxxxxxxx"><small>اكتب رقمًا صحيحًا يستطيع مالك المنصة التواصل معك من خلاله.</small></label>
           <label>المرحلة<select id="requestStage" required><option value="" selected disabled>اختر المرحلة</option><option value="روضة">1- روضة</option><option value="ابتدائي صفوف دنيا">2- ابتدائي صفوف دنيا</option><option value="ابتدائي صفوف عليا">3- ابتدائي صفوف عليا</option><option value="متوسط">4- متوسط</option><option value="ثانوي">5- ثانوي</option><option value="موظف">6- موظف</option></select><small>اختر المرحلة الحالية بدقة لتخصيص المحتوى المناسب لك.</small></label>
+          <label>كلمة المرور<input id="requestPassword" type="password" autocomplete="new-password" required minlength="8" maxlength="128" placeholder="اكتب كلمة مرور قوية"><small>يجب أن تكون 8 أحرف على الأقل. استخدم مزيجًا من الحروف والأرقام، ولا تشاركها مع أحد.</small></label>
+          <label>تأكيد كلمة المرور<input id="requestPasswordConfirm" type="password" autocomplete="new-password" required minlength="8" maxlength="128" placeholder="أعد كتابة كلمة المرور"><small>يجب أن تطابق كلمة المرور المكتوبة في الخانة السابقة.</small></label>
           <label>ملاحظة للمالك<textarea id="requestNote" maxlength="300" placeholder="أي معلومات إضافية (اختياري)"></textarea><small>اكتب معلومة تساعد المالك على معرفة طلبك، ويمكن تركها فارغة.</small></label>
-          <button class="auth-submit" type="submit">إرسال طلب التسجيل</button>
+          <button class="auth-submit" type="submit">إنشاء حسابي والدخول</button>
           <p class="auth-message" id="requestMessage"></p>
         </form>
       </div>
