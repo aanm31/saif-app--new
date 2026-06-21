@@ -40,10 +40,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS sessions_expires_at ON sessions(expires_at);
 
-CREATE TABLE IF NOT EXISTS game_matches (id INTEGER PRIMARY KEY AUTOINCREMENT, game_key TEXT NOT NULL, game_name TEXT NOT NULL, mode TEXT NOT NULL CHECK (mode IN ('individual','teams')), host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, rounds INTEGER NOT NULL CHECK (rounds BETWEEN 1 AND 30), timer_seconds INTEGER NOT NULL DEFAULT 0 CHECK (timer_seconds BETWEEN 0 AND 180), max_bet INTEGER NOT NULL DEFAULT 0 CHECK (max_bet >= 0), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed')), winning_sides TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT);
+CREATE TABLE IF NOT EXISTS game_matches (id INTEGER PRIMARY KEY AUTOINCREMENT, game_key TEXT NOT NULL, game_name TEXT NOT NULL, mode TEXT NOT NULL CHECK (mode IN ('individual','teams')), host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, rounds INTEGER NOT NULL CHECK (rounds BETWEEN 1 AND 30), timer_seconds INTEGER NOT NULL DEFAULT 0 CHECK (timer_seconds BETWEEN 0 AND 180), max_bet INTEGER NOT NULL DEFAULT 0 CHECK (max_bet >= 0), match_type TEXT NOT NULL DEFAULT 'standard' CHECK (match_type IN ('standard','friendly','official')), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed')), winning_sides TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT);
 CREATE TABLE IF NOT EXISTS game_match_players (match_id INTEGER NOT NULL REFERENCES game_matches(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, side TEXT NOT NULL, score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0), is_winner INTEGER NOT NULL DEFAULT 0 CHECK (is_winner IN (0,1)), PRIMARY KEY (match_id,user_id));
 CREATE TABLE IF NOT EXISTS game_point_awards (match_id INTEGER NOT NULL REFERENCES game_matches(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, points INTEGER NOT NULL CHECK (points > 0), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (match_id,user_id));
 CREATE TRIGGER IF NOT EXISTS game_award_add_points AFTER INSERT ON game_point_awards BEGIN UPDATE users SET game_points = game_points + NEW.points WHERE id = NEW.user_id; END;
+CREATE TABLE IF NOT EXISTS official_game_point_awards (match_id INTEGER NOT NULL REFERENCES game_matches(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, points INTEGER NOT NULL CHECK (points > 0), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (match_id,user_id));
+CREATE TRIGGER IF NOT EXISTS official_game_award_add_points AFTER INSERT ON official_game_point_awards BEGIN UPDATE users SET points = points + NEW.points WHERE id = NEW.user_id; END;
 CREATE TABLE IF NOT EXISTS game_settings (setting_key TEXT PRIMARY KEY, setting_value INTEGER NOT NULL CHECK (setting_value > 0), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 INSERT OR IGNORE INTO game_settings (setting_key,setting_value) VALUES ('win_points',100),('million_cap',10000);
 
@@ -284,3 +286,14 @@ CREATE TABLE IF NOT EXISTS supervisor_activity_metrics (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(supervisor_id, metric_key)
 );
+
+CREATE TABLE IF NOT EXISTS supervisor_assignments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supervisor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ended_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS supervisor_assignments_supervisor
+ON supervisor_assignments(supervisor_id, started_at DESC);

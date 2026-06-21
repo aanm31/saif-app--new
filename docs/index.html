@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#12a9c7">
-  <title>صيف | مغامرة التعلّم</title>
+  <title>صيف عبدالرحمن بن ناصر 48</title>
+  <link rel="icon" type="image/png" href="assets/site-icon.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
@@ -12,13 +14,12 @@
   <link rel="stylesheet" href="challenge-3d.css">
   <link rel="stylesheet" href="achievements.css">
   <link rel="stylesheet" href="children-3d.css">
-  <link rel="stylesheet" href="family-visuals.css">
   <link rel="stylesheet" href="headhunters.css">
 </head>
 <body>
   <section class="auth-screen" id="authScreen">
     <div class="auth-showcase">
-      <div class="auth-brand"><span class="brand-mark">ص</span><strong>صَيْف</strong></div>
+      <div class="auth-brand"><span class="brand-mark"><img src="assets/site-icon.png" alt=""></span><strong>صيف عبدالرحمن بن ناصر 48</strong></div>
       <div>
         <span class="auth-kicker">نادي المغامرات الصيفية</span>
         <h1>جاهز لصيف مليء بالمرح؟</h1>
@@ -28,7 +29,7 @@
     </div>
     <div class="auth-panel">
       <div class="auth-box">
-        <div class="auth-heading"><span class="auth-logo">ص</span><div><h2 id="authTitle">أهلًا بالمغامر!</h2><p id="authSubtitle">أدخل بياناتك وابدأ يومًا صيفيًا جديدًا</p></div></div>
+        <div class="auth-heading"><span class="auth-logo"><img src="assets/site-icon.png" alt=""></span><div><h2 id="authTitle">أهلًا بالمغامر!</h2><p id="authSubtitle">أدخل بياناتك وابدأ يومًا صيفيًا جديدًا</p></div></div>
         <div class="auth-tabs" role="tablist">
           <button class="auth-tab active" data-auth-view="login">تسجيل الدخول</button>
           <button class="auth-tab" data-auth-view="request">إنشاء حساب</button>
@@ -57,7 +58,7 @@
     <main class="main-content">
       <header class="topbar">
         <button class="home-back-button hidden" id="homeBackButton" data-page="home" title="العودة إلى الرئيسية"><span>⌂</span><b>الرئيسية</b></button>
-        <div class="top-brand"><span class="brand-mark">ص</span><div><strong>صَيْف</strong><small>نادي المغامرين</small></div></div>
+        <div class="top-brand"><span class="brand-mark"><img src="assets/site-icon.png" alt=""></span><div><strong>صيف عبدالرحمن بن ناصر 48</strong><small>نادي المغامرين</small></div></div>
         <div class="page-title"><span class="eyebrow" id="pageGreeting">مرحبًا بك</span><h1 id="pageTitle">جاهز لمغامرة جديدة؟</h1></div>
         <div class="top-actions">
           <button class="top-refresh" id="refreshPageButton" type="button" title="تحديث الصفحة" aria-label="تحديث الصفحة"><span>↻</span><b>تحديث</b></button>
@@ -70,12 +71,12 @@
           <div class="hero-grid">
             <article class="welcome-panel">
               <img class="summer-hero-art" src="assets/family/family-team-3d.webp" alt="مجموعة عائلية مرحة بأسلوب ثلاثي الأبعاد">
-              <div class="welcome-copy"><span class="status-badge">☀️ يوم جديد في مخيم صيف</span><h2>المرح بدأ...<br>والنجوم تنتظرك!</h2><p>حل تحدي اليوم، اضحك مع الأصدقاء، واجمع نجومًا تفتح لك مفاجآت جديدة.</p><button class="primary-button" data-page="journey">ابدأ المغامرة <span>←</span></button></div>
+              <div class="welcome-copy"><span class="status-badge">☀️ يوم جديد في صيف عبدالرحمن</span><h2>المرح بدأ...<br>والنجوم تنتظرك!</h2><p>حل تحدي اليوم، اضحك مع الأصدقاء، واجمع نجومًا تفتح لك مفاجآت جديدة.</p><button class="primary-button" data-page="journey">ابدأ المغامرة <span>←</span></button></div>
               <div class="level-orbit" aria-label="المستوى الحالي 8"><div class="orbit-ring"></div><div class="level-core"><small>مستواك</small><strong>8</strong></div><span class="orbit-star star-one">★</span><span class="orbit-star star-two">✦</span></div>
             </article>
           </div>
           <article class="manager-instructions is-loading" id="managerInstructionsCard" aria-labelledby="managerInstructionsTitle">
-            <img src="assets/family/portrait-girl.webp" alt="صورة عائلية مرحة داخل بطاقة تعليمات المدير">
+            <img src="assets/manager-instructions-3d.png" alt="مستكشف صغير يعلن تعليمات المدير في عالم تعليمي ثلاثي الأبعاد">
             <div class="manager-instructions-copy">
               <span class="manager-kicker"><i>📣</i> رسالة مهمة من المدير</span>
               <h2 id="managerInstructionsTitle">رسالة المدير لك اليوم</h2>
@@ -84,9 +85,10 @@
             </div>
             <span class="floating-shape shape-star">★</span><span class="floating-shape shape-ball">●</span>
           </article>
+          <section id="homeEvalSection" class="hidden"></section>
           <div class="section-heading"><div><span class="eyebrow">تقدمك هذا الأسبوع</span><h2>رحلة الإنجاز</h2></div><button class="text-button" data-page="journey">عرض الخريطة كاملة ←</button></div>
           <section class="journey-preview">
-            <img src="assets/family/graduation-3d.webp" alt="احتفال عائلي بالتعلم والإنجاز"><div class="map-overlay"></div>
+            <img src="assets/learning-world.png" alt="خريطة عالم التعلم"><div class="map-overlay"></div>
             <button class="stage-marker stage-1 completed" onclick="showStage(1)"><span>✓</span><b>بداية الرحلة</b></button>
             <button class="stage-marker stage-2 completed" onclick="showStage(2)"><span>✓</span><b>حديقة المعرفة</b></button>
             <button class="stage-marker stage-3 current" onclick="showStage(3)"><span>3</span><b>مرصد العلوم</b></button>
@@ -95,19 +97,20 @@
           </section>
           <div class="section-heading home-navigation-heading"><div><span class="eyebrow">كل شيء أمامك</span><h2>إلى أين تريد أن تذهب؟</h2></div></div>
           <nav class="home-navigation-grid" aria-label="أقسام المنصة">
-            <button class="home-nav-tile tile-achievements" data-page="achievements"><img src="assets/family/graduation-3d.webp" alt="احتفال عائلي بالإنجاز"><div><strong>إنجازاتي</strong><small>مهامي وأوسمتي اليومية</small></div><i>←</i></button>
-            <button class="home-nav-tile tile-journey" data-page="journey"><img src="assets/family/seated-boy.webp" alt="صورة عائلية للرحلة"><div><strong>رحلتي</strong><small>خريطة تقدمي ومراحلي</small></div><i>←</i></button>
-            <button class="home-nav-tile tile-competitions" data-page="competitions"><img src="assets/family/family-team-3d.webp" alt="فريق عائلي مرح"><div><strong>المسابقات</strong><small>شارك وتنافس مع الأصدقاء</small></div><i>←</i></button>
-            <button class="home-nav-tile tile-episodes" data-page="episodes"><img src="assets/family/portrait-girl.webp" alt="صورة عائلية للحلقات"><div><strong>الحلقات</strong><small>شاهد وتعلّم أشياء جديدة</small></div><i>←</i></button>
-            <button class="home-nav-tile tile-games" data-page="games"><img src="assets/family/young-pair.webp" alt="طفلان في أجواء عائلية"><div><strong>التحديات</strong><small>ألعاب ذكية تتجدد يوميًا</small></div><i>←</i></button>
-            <button class="home-nav-tile tile-headhunters" data-page="headhunters"><img src="assets/family/traditional-pair.webp" alt="صورة عائلية بطابع مرح"><div><strong>مصامخ الرؤوس</strong><small>أسئلة وتحديات للأذكياء</small></div><i>←</i></button>
-            <button class="home-nav-tile tile-store" data-page="store"><img src="assets/family/elegant-girls.webp" alt="صورة عائلية للمتجر"><div><strong>المتجر</strong><small>استبدل نقاطك بجوائز</small></div><i>←</i></button>
-            <button class="home-nav-tile tile-posts" data-page="posts"><img src="assets/family/babies-3d.webp" alt="أطفال صغار بأسلوب ثلاثي الأبعاد مرح"><div><strong>حي الله من جانا</strong><small>شارك أصحابك الأخبار</small></div><i>←</i></button>
-            <button class="home-nav-tile tile-challenge-race" data-page="challengeRace"><img src="assets/family/family-team.webp" alt="فريق عائلي جاهز للتحدي"><div><strong>سباق التحدي</strong><small>شاهد ترتيب المتسابقين</small></div><i>←</i></button>
-            <button class="home-nav-tile tile-owner owner-home-tile hidden" data-page="owner"><img src="assets/family/white-dress.webp" alt="صورة عائلية للوحة المالك"><div><strong>لوحة المالك</strong><small>إدارة المنصة والمستفيدين</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-achievements" data-page="achievements"><img src="assets/navigation-3d/achievements.webp" alt="شخصية كرتونية متحمسة"><div><strong>إنجازاتي</strong><small>مهامي وأوسمتي اليومية</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-journey" data-page="journey"><img src="assets/navigation-3d/journey.webp" alt="شخصية كرتونية غاضبة بشكل لطيف"><div><strong>رحلتي</strong><small>خريطة تقدمي ومراحلي</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-competitions" data-page="competitions"><img src="assets/navigation-3d/competitions.webp" alt="شخصية كرتونية ضاحكة"><div><strong>المسابقات</strong><small>شارك وتنافس مع الأصدقاء</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-episodes" data-page="episodes"><img src="assets/navigation-3d/episodes.webp" alt="شخصية كرتونية فضولية"><div><strong>الحلقات</strong><small>شاهد وتعلّم أشياء جديدة</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-games" data-page="games"><img src="assets/navigation-3d/games.webp" alt="شخصية كرتونية فخورة"><div><strong>التحديات</strong><small>ألعاب ذكية تتجدد يوميًا</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-headhunters" data-page="headhunters"><img src="assets/navigation-3d/headhunters.webp" alt="شخصية كرتونية متفاجئة"><div><strong>مصامخ الرؤوس</strong><small>أسئلة وتحديات للأذكياء</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-store" data-page="store"><img src="assets/navigation-3d/store.webp" alt="شخصية كرتونية مركزة"><div><strong>المتجر</strong><small>استبدل نقاطك بجوائز</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-posts" data-page="posts"><img src="assets/navigation-3d/posts.webp" alt="شخصية كرتونية مرحة"><div><strong>حي الله من جانا</strong><small>شارك أصحابك الأخبار</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-challenge-race" data-page="challengeRace"><img src="assets/navigation-3d/challenge-race.webp" alt="شخصية كرتونية تشجع في السباق"><div><strong>سباق التحدي</strong><small>شاهد ترتيب المتسابقين</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-supervisor-knight" data-page="supervisorKnight"><img src="assets/navigation-3d/achievements.webp" alt="شخصية كرتونية متحمسة"><div><strong>فارس المشرفين</strong><small>ترتيب المشرفين وتقييمهم</small></div><i>←</i></button>
+            <button class="home-nav-tile tile-owner owner-home-tile hidden" data-page="owner"><img src="assets/navigation-3d/owner.webp" alt="شخصية كرتونية واثقة"><div><strong>لوحة المالك</strong><small>إدارة المنصة والمستفيدين</small></div><i>←</i></button>
           </nav>
         </section>
-        <section class="page" id="achievementsPage"></section><section class="page" id="journeyPage"></section><section class="page" id="competitionsPage"></section><section class="page" id="episodesPage"></section><section class="page" id="gamesPage"></section><section class="page" id="headhuntersPage"></section><section class="page" id="storePage"></section><section class="page" id="postsPage"></section><section class="page" id="challengeRacePage"></section><section class="page" id="ownerPage"></section>
+        <section class="page" id="achievementsPage"></section><section class="page" id="journeyPage"></section><section class="page" id="competitionsPage"></section><section class="page" id="episodesPage"></section><section class="page" id="gamesPage"></section>        <section class="page" id="headhuntersPage"></section><section class="page" id="storePage"></section><section class="page" id="postsPage"></section><section class="page" id="challengeRacePage"></section><section class="page" id="supervisorKnightPage"></section><section class="page" id="ownerPage"></section>
       </div>
     </main>
   </div>
@@ -115,5 +118,6 @@
   <script src="app.js"></script>
   <script src="daily-challenges.js"></script>
   <script src="headhunters.js"></script>
+  <script src="supervisor.js"></script>
 </body>
 </html>
