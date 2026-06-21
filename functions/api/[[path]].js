@@ -558,6 +558,80 @@ async function completeDailyChallenge(request, env, user, key) {
   return json({ ok: true, awarded: points, points: updated.points });
 }
 
+async function ensureMajlisSchema(env) {
+  await env.DB.batch([
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS majlis_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, content TEXT NOT NULL, content_type TEXT NOT NULL DEFAULT 'text' CHECK (content_type IN ('text','sticker')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS majlis_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER NOT NULL REFERENCES majlis_posts(id) ON DELETE CASCADE, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, parent_id INTEGER REFERENCES majlis_comments(id) ON DELETE CASCADE, content TEXT NOT NULL, content_type TEXT NOT NULL DEFAULT 'text' CHECK (content_type IN ('text','sticker')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS majlis_reactions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, target_type TEXT NOT NULL CHECK (target_type IN ('post','comment')), target_id INTEGER NOT NULL, reaction TEXT NOT NULL CHECK (reaction IN ('like','dislike','laugh')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, target_type, target_id))"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS majlis_comments_post_id ON majlis_comments(post_id, created_at)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS majlis_reactions_target ON majlis_reactions(target_type, target_id)")
+  ]);
+}
+
+async function listMajlis(env, user) {
+  await ensureMajlisSchema(env);
+  const [postRows, commentRows, reactionRows] = await env.DB.batch([
+    env.DB.prepare("SELECT p.id, p.user_id, p.content, p.content_type, p.created_at, u.name AS author, u.role, u.level FROM majlis_posts p JOIN users u ON u.id = p.user_id WHERE u.status = 'active' ORDER BY p.created_at DESC, p.id DESC LIMIT 100"),
+    env.DB.prepare("SELECT c.id, c.post_id, c.user_id, c.parent_id, c.content, c.content_type, c.created_at, u.name AS author, u.role, u.level FROM majlis_comments c JOIN users u ON u.id = c.user_id JOIN majlis_posts p ON p.id = c.post_id WHERE u.status = 'active' ORDER BY c.created_at, c.id"),
+    env.DB.prepare("SELECT target_type, target_id, reaction, COUNT(*) AS count, MAX(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS mine FROM majlis_reactions GROUP BY target_type, target_id, reaction").bind(user.id)
+  ]);
+  const reactions = {};
+  for (const row of reactionRows.results) {
+    const key = `${row.target_type}:${row.target_id}`;
+    reactions[key] ||= { like: 0, dislike: 0, laugh: 0, mine: null };
+    reactions[key][row.reaction] = Number(row.count);
+    if (row.mine) reactions[key].mine = row.reaction;
+  }
+  return json({ posts: postRows.results, comments: commentRows.results, reactions });
+}
+
+function validateMajlisContent(body) {
+  const type = body.type === "sticker" ? "sticker" : "text";
+  const content = clean(body.content, type === "sticker" ? 40 : 1200);
+  if (!content) return { error: "اكتب السالفة أو اختر ملصقًا" };
+  if (type === "sticker" && !/^[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]+$/u.test(content)) return { error: "الملصق غير صالح" };
+  return { content, type };
+}
+
+async function createMajlisPost(request, env, user) {
+  await ensureMajlisSchema(env);
+  const value = validateMajlisContent(await readJson(request));
+  if (value.error) return json({ error: value.error }, 400);
+  const result = await env.DB.prepare("INSERT INTO majlis_posts (user_id, content, content_type) VALUES (?, ?, ?)").bind(user.id, value.content, value.type).run();
+  return json({ id: result.meta.last_row_id }, 201);
+}
+
+async function createMajlisComment(request, env, user, postId) {
+  await ensureMajlisSchema(env);
+  const body = await readJson(request), value = validateMajlisContent(body);
+  if (value.error) return json({ error: value.error }, 400);
+  const post = await env.DB.prepare("SELECT id FROM majlis_posts WHERE id = ?").bind(postId).first();
+  if (!post) return json({ error: "السالفة غير موجودة" }, 404);
+  const parentId = body.parentId ? Number(body.parentId) : null;
+  if (parentId) {
+    const parent = await env.DB.prepare("SELECT id FROM majlis_comments WHERE id = ? AND post_id = ?").bind(parentId, postId).first();
+    if (!parent) return json({ error: "التعليق الذي ترد عليه غير موجود" }, 404);
+  }
+  const result = await env.DB.prepare("INSERT INTO majlis_comments (post_id, user_id, parent_id, content, content_type) VALUES (?, ?, ?, ?, ?)").bind(postId, user.id, parentId, value.content, value.type).run();
+  return json({ id: result.meta.last_row_id }, 201);
+}
+
+async function setMajlisReaction(request, env, user, targetType, targetId) {
+  await ensureMajlisSchema(env);
+  const reaction = String((await readJson(request)).reaction || "");
+  if (!new Set(["like", "dislike", "laugh"]).has(reaction)) return json({ error: "التفاعل غير صالح" }, 400);
+  const table = targetType === "post" ? "majlis_posts" : "majlis_comments";
+  const target = await env.DB.prepare(`SELECT id FROM ${table} WHERE id = ?`).bind(targetId).first();
+  if (!target) return json({ error: "المشاركة غير موجودة" }, 404);
+  const current = await env.DB.prepare("SELECT reaction FROM majlis_reactions WHERE user_id = ? AND target_type = ? AND target_id = ?").bind(user.id, targetType, targetId).first();
+  if (current?.reaction === reaction) {
+    await env.DB.prepare("DELETE FROM majlis_reactions WHERE user_id = ? AND target_type = ? AND target_id = ?").bind(user.id, targetType, targetId).run();
+    return json({ ok: true, reaction: null });
+  }
+  await env.DB.prepare("INSERT INTO majlis_reactions (user_id, target_type, target_id, reaction) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, target_type, target_id) DO UPDATE SET reaction = excluded.reaction, created_at = CURRENT_TIMESTAMP").bind(user.id, targetType, targetId, reaction).run();
+  return json({ ok: true, reaction });
+}
+
 async function listProducts(env) {
   const { results } = await env.DB.prepare("SELECT id, name, description, price, icon, stock FROM products WHERE active = 1 ORDER BY id").all();
   return json({ products: results });
