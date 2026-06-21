@@ -444,6 +444,7 @@ async function ensureDailyChallengesSchema(env) {
 
 async function ensureAchievementsSchema(env) {
   const statements = [
+    "CREATE TABLE IF NOT EXISTS achievement_categories (id INTEGER PRIMARY KEY AUTOINCREMENT, category_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL COLLATE NOCASE UNIQUE, icon TEXT NOT NULL DEFAULT '🏆', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS achievement_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', category TEXT NOT NULL CHECK (category IN ('golden_achievements','golden_fortress','noori','knowledge_station','golden_minute','health_first')), points INTEGER NOT NULL CHECK (points > 0), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)), start_date TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE INDEX IF NOT EXISTS achievement_tasks_active_date ON achievement_tasks(active, start_date)",
     "CREATE TABLE IF NOT EXISTS achievement_completions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, task_id INTEGER NOT NULL REFERENCES achievement_tasks(id), achievement_date TEXT NOT NULL, points INTEGER NOT NULL CHECK (points > 0), completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, task_id, achievement_date))",
@@ -452,7 +453,17 @@ async function ensureAchievementsSchema(env) {
     "CREATE TRIGGER IF NOT EXISTS achievement_completion_add_points AFTER INSERT ON achievement_completions BEGIN UPDATE users SET points = points + NEW.points WHERE id = NEW.user_id; END"
   ];
   for (const statement of statements) await env.DB.prepare(statement).run();
-  await ensureColumns(env, "achievement_tasks", { end_date: "TEXT" });
+  await ensureColumns(env, "achievement_tasks", { end_date: "TEXT", code: "TEXT", category_id: "INTEGER", deleted_at: "TEXT" });
+  const categories = [
+    ["golden_achievements", "الإنجازات الذهبية", "✨"], ["golden_fortress", "الحصن الذهبي", "🛡️"],
+    ["noori", "نوري", "📖"], ["knowledge_station", "محطة المعرفة", "💡"],
+    ["golden_minute", "الدقيقة الذهبية", "⏱️"], ["health_first", "صحتي أولاً", "🌿"]
+  ];
+  await env.DB.batch(categories.map(([key, name, icon]) => env.DB.prepare("INSERT OR IGNORE INTO achievement_categories (category_key, name, icon) VALUES (?, ?, ?)").bind(key, name, icon)));
+  await env.DB.prepare("UPDATE achievement_tasks SET category_id = (SELECT id FROM achievement_categories WHERE category_key = achievement_tasks.category) WHERE category_id IS NULL").run();
+  await env.DB.prepare("UPDATE achievement_tasks SET code = 'TASK-' || id WHERE code IS NULL OR TRIM(code) = ''").run();
+  await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS achievement_tasks_code_unique ON achievement_tasks(code COLLATE NOCASE) WHERE deleted_at IS NULL").run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS achievement_tasks_category_id ON achievement_tasks(category_id, deleted_at)").run();
 }
 
 function validAchievementDate(value) {
