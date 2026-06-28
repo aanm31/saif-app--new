@@ -41,6 +41,7 @@ export async function onRequest(context) {
     if (method === "GET" && path === "daily-challenges") return listDailyChallenges(env, user);
     if (method === "GET" && path === "question-bank") return json({ count: QUESTION_COUNT, stage: normalizeStage(user.education_stage), questions: questionsForStage(user.education_stage, Math.min(100, Number(url.searchParams.get("count")) || 30), Date.now()) });
     if (method === "GET" && path === "manager-instructions") return getManagerInstructions(env);
+    if (method === "GET" && path === "journey") return getJourneyProgress(env, user);
     if (method === "GET" && path === "challenge-race") return getChallengeRace(env);
     if (method === "GET" && path === "videos") return listVideos(env, user, false);
     const videoComplete = path.match(/^videos\/(\d+)\/complete$/);
@@ -402,6 +403,35 @@ async function deleteUser(env, id, ownerId) {
   if (id === ownerId) return json({ error: "U??�؟� U?U?U?U? ?�؟�?�؟�U? ?�؟�?�؟�?�؟�?�؟� ?�؟�U?U??�؟�U?U? ?�؟�U??�؟�?�؟�U?U?" }, 400);
   const result = await env.DB.prepare("DELETE FROM users WHERE id = ? AND role = 'student'").bind(id).run();
   return result.meta.changes ? json({ ok: true }) : json({ error: "?�؟�U??�؟�?�؟�?�؟�?�؟� ??U??�؟� U?U??�؟�U??�؟�" }, 404);
+}
+
+async function getJourneyProgress(env, user) {
+  await Promise.all([ensureAchievementsSchema(env), ensureDailyChallengesSchema(env), ensureVideosSchema(env), ensureGameSchema(env), ensureCompetitionSettings(env)]);
+  const [achievement, challenge, competition, video, headhunter, headhunterPoints, availableAchievements, availableVideos, competitionTarget, account] = await Promise.all([
+    env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM achievement_completions WHERE user_id = ?").bind(user.id).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM daily_challenge_attempts WHERE user_id = ? AND status = 'completed'").bind(user.id).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM activity_rewards WHERE user_id = ? AND activity_type = 'competition'").bind(user.id).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM video_completions WHERE user_id = ?").bind(user.id).first(),
+    env.DB.prepare("SELECT COUNT(DISTINCT p.match_id) AS count FROM game_match_players p JOIN game_matches m ON m.id = p.match_id WHERE p.user_id = ? AND m.status = 'completed'").bind(user.id).first(),
+    env.DB.prepare("SELECT COALESCE(SUM(points),0) AS points FROM (SELECT points FROM game_point_awards WHERE user_id = ? UNION ALL SELECT points FROM official_game_point_awards WHERE user_id = ?)").bind(user.id, user.id).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM achievement_tasks WHERE active = 1 AND deleted_at IS NULL").first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM videos WHERE active = 1 AND (beneficiary_level = ? OR beneficiary_level = 'all')").bind(String(user.education_stage || "")).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM competition_settings").first(),
+    env.DB.prepare("SELECT points, game_points FROM users WHERE id = ?").bind(user.id).first()
+  ]);
+  const raw = [
+    { key: "achievements", label: "إنجازاتي", icon: "✅", count: achievement?.count, points: achievement?.points, target: Math.max(1, Number(availableAchievements?.count || 0)) },
+    { key: "challenges", label: "التحديات", icon: "🎯", count: challenge?.count, points: challenge?.points, target: 10 },
+    { key: "competitions", label: "المسابقات", icon: "🏆", count: competition?.count, points: competition?.points, target: Math.max(1, Number(competitionTarget?.count || 6)) },
+    { key: "episodes", label: "الحلقات", icon: "🎬", count: video?.count, points: video?.points, target: Math.max(1, Number(availableVideos?.count || 0)) },
+    { key: "headhunters", label: "مصامخ الرؤوس", icon: "🧠", count: headhunter?.count, points: headhunterPoints?.points, target: 5 }
+  ];
+  const sections = raw.map(item => ({ ...item, count: Number(item.count || 0), points: Number(item.points || 0), progress: Math.min(100, Math.round(Number(item.count || 0) / item.target * 100)) }));
+  const completed = sections.reduce((sum, item) => sum + item.count, 0);
+  const earnedPoints = sections.reduce((sum, item) => sum + item.points, 0);
+  const progress = Math.round(sections.reduce((sum, item) => sum + item.progress, 0) / sections.length);
+  const stage = progress >= 100 ? 4 : progress >= 67 ? 3 : progress >= 34 ? 2 : 1;
+  return json({ progress, stage, completed, earnedPoints, accountPoints: Number(account?.points || 0), gamePoints: Number(account?.game_points || 0), sections });
 }
 
 async function awardProgress(request, env, user) {
