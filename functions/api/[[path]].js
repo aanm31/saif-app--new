@@ -85,6 +85,7 @@ export async function onRequest(context) {
     const isSupervisor = await checkSupervisor(env, user.id);
     if (path.startsWith("owner/") || path.startsWith("supervisor/admin/")) {
       if (user.role !== "owner" && !isSupervisor) return json({ error: "??U??�؟� U??�؟�?�؟�?�؟�" }, 403);
+      if (method !== "GET" && (path === "owner/achievement-tasks" || /^owner\/achievement-tasks\/\d+$/.test(path)) && user.role !== "owner") return json({ error: "إدارة مهام الإنجاز متاحة لمالك المنصة فقط" }, 403);
       if (method === "GET" && path === "owner/registration-requests") return listRequests(env);
       if (method === "GET" && path === "owner/users") return listUsers(env);
       if (method === "GET" && path === "owner/achievement-tasks") return listAchievementTasksV2(env);
@@ -415,7 +416,7 @@ async function getJourneyProgress(env, user) {
     env.DB.prepare("SELECT COUNT(DISTINCT p.match_id) AS count FROM game_match_players p JOIN game_matches m ON m.id = p.match_id WHERE p.user_id = ? AND m.status = 'completed'").bind(user.id).first(),
     env.DB.prepare("SELECT COALESCE(SUM(points),0) AS points FROM (SELECT points FROM game_point_awards WHERE user_id = ? UNION ALL SELECT points FROM official_game_point_awards WHERE user_id = ?)").bind(user.id, user.id).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM achievement_tasks WHERE active = 1 AND deleted_at IS NULL").first(),
-    env.DB.prepare("SELECT COUNT(*) AS count FROM videos WHERE active = 1 AND (beneficiary_level = ? OR beneficiary_level = 'all')").bind(String(user.education_stage || "")).first(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM videos WHERE active = 1 AND (beneficiary_level = 'all' OR (',' || beneficiary_level || ',') LIKE ('%,' || ? || ',%'))").bind(String(user.education_stage || "")).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM competition_settings").first(),
     env.DB.prepare("SELECT points, game_points FROM users WHERE id = ?").bind(user.id).first()
   ]);
@@ -996,19 +997,23 @@ async function listVideos(env, user, ownerView = false) {
   await ensureVideosSchema(env);
   const sql = ownerView
     ? "SELECT v.*, CASE WHEN v.active = 1 THEN 0 ELSE 1 END AS completed FROM videos v ORDER BY v.active DESC, v.id DESC"
-    : "SELECT v.id, v.title, v.beneficiary_level, v.video_url, v.points, EXISTS(SELECT 1 FROM video_completions c WHERE c.video_id = v.id AND c.user_id = ?) AS completed FROM videos v WHERE v.active = 1 AND (v.beneficiary_level = ? OR v.beneficiary_level = 'all') ORDER BY v.id DESC";
+    : "SELECT v.id, v.title, v.beneficiary_level, v.video_url, v.points, EXISTS(SELECT 1 FROM video_completions c WHERE c.video_id = v.id AND c.user_id = ?) AS completed FROM videos v WHERE v.active = 1 AND (v.beneficiary_level = 'all' OR (',' || v.beneficiary_level || ',') LIKE ('%,' || ? || ',%')) ORDER BY v.id DESC";
   const query = ownerView ? env.DB.prepare(sql) : env.DB.prepare(sql).bind(user.id, String(user.education_stage || ""));
   const { results } = await query.all();
   return json({ videos: results });
 }
 
 function validateVideoInput(body) {
-  const title = clean(body.title, 120), beneficiaryLevel = clean(body.beneficiaryLevel, 40);
+  const title = clean(body.title, 120);
+  const requestedLevels = Array.isArray(body.beneficiaryLevels) ? body.beneficiaryLevels : [body.beneficiaryLevel];
+  let beneficiaryLevels = [...new Set(requestedLevels.map(value => String(value || "").trim()).filter(value => value === "all" || EDUCATION_STAGE_SET.has(value)))];
+  if (beneficiaryLevels.includes("all")) beneficiaryLevels = ["all"];
+  const beneficiaryLevel = beneficiaryLevels.join(",");
   const videoUrl = String(body.videoUrl || "").trim().slice(0, 1000), points = Math.floor(Number(body.points));
   let validUrl = false;
   try { const url = new URL(videoUrl); validUrl = url.protocol === "https:" || url.protocol === "http:"; } catch {}
   if (title.length < 2 || !beneficiaryLevel || !validUrl || !Number.isInteger(points) || points < 1 || points > 10000) return { error: "تحقق من اسم المادة والمستوى ورابط الفيديو والنقاط" };
-  return { title, beneficiaryLevel, videoUrl, points };
+  return { title, beneficiaryLevel, beneficiaryLevels, videoUrl, points };
 }
 
 async function createVideo(request, env, user) {
@@ -1041,7 +1046,7 @@ async function deleteVideo(env, id) {
 async function completeVideo(env, user, videoId) {
   if (user.role !== "student") return json({ error: "المشاهدة مخصصة للمستفيدين" }, 400);
   await ensureVideosSchema(env);
-  const video = await env.DB.prepare("SELECT id, points FROM videos WHERE id = ? AND active = 1 AND (beneficiary_level = ? OR beneficiary_level = 'all')").bind(videoId, String(user.education_stage || "")).first();
+  const video = await env.DB.prepare("SELECT id, points FROM videos WHERE id = ? AND active = 1 AND (beneficiary_level = 'all' OR (',' || beneficiary_level || ',') LIKE ('%,' || ? || ',%'))").bind(videoId, String(user.education_stage || "")).first();
   if (!video) return json({ error: "المقطع غير متاح لمستواك" }, 404);
   const result = await env.DB.prepare("INSERT OR IGNORE INTO video_completions (user_id, video_id, points) VALUES (?, ?, ?)").bind(user.id, video.id, video.points).run();
   const updated = await env.DB.prepare("SELECT points FROM users WHERE id = ?").bind(user.id).first();
