@@ -44,6 +44,8 @@ export async function onRequest(context) {
     if (method === "GET" && path === "journey") return getJourneyProgress(env, user);
     if (method === "GET" && path === "challenge-race") return getChallengeRace(env);
     if (method === "GET" && path === "videos") return listVideos(env, user, false);
+    const videoStart = path.match(/^videos\/(\d+)\/start$/);
+    if (method === "POST" && videoStart) return startVideoView(env, user, Number(videoStart[1]));
     const videoComplete = path.match(/^videos\/(\d+)\/complete$/);
     if (method === "POST" && videoComplete) return completeVideo(env, user, Number(videoComplete[1]));
     if (method === "GET" && path === "achievements") return listAchievementsV2(url, env, user);
@@ -224,6 +226,8 @@ async function ensureSchema(env) {
     "CREATE TABLE IF NOT EXISTS reward_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, reward_id INTEGER NOT NULL REFERENCES rewards(id), points_paid INTEGER NOT NULL CHECK (points_paid > 0), status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','delivered')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, delivered_at TEXT)",
     "CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, beneficiary_level TEXT NOT NULL, video_url TEXT NOT NULL, points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 10000), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)), created_by INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS video_completions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, video_id INTEGER NOT NULL REFERENCES videos(id), points INTEGER NOT NULL CHECK (points > 0), completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, video_id))",
+    "CREATE TABLE IF NOT EXISTS video_daily_views (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, video_id INTEGER NOT NULL REFERENCES videos(id), view_date TEXT NOT NULL, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, view_date))",
+    "CREATE INDEX IF NOT EXISTS video_daily_views_user_date ON video_daily_views(user_id, view_date DESC)",
     "CREATE TRIGGER IF NOT EXISTS video_completion_add_points AFTER INSERT ON video_completions BEGIN UPDATE users SET points = points + NEW.points WHERE id = NEW.user_id; END",
     "CREATE TABLE IF NOT EXISTS daily_challenge_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, challenge_key TEXT NOT NULL, challenge_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'started' CHECK (status IN ('started','completed')), score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0), points INTEGER NOT NULL DEFAULT 0 CHECK (points >= 0), duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0), started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT, UNIQUE(user_id, challenge_key, challenge_date))",
     "CREATE INDEX IF NOT EXISTS daily_attempts_user_date ON daily_challenge_attempts(user_id, challenge_date)",
@@ -407,14 +411,16 @@ async function deleteUser(env, id, ownerId) {
 }
 
 async function getJourneyProgress(env, user) {
-  await Promise.all([ensureAchievementsSchema(env), ensureDailyChallengesSchema(env), ensureVideosSchema(env), ensureGameSchema(env), ensureCompetitionSettings(env)]);
-  const [achievement, challenge, competition, video, headhunter, headhunterPoints, availableAchievements, availableVideos, competitionTarget, account] = await Promise.all([
+  await Promise.all([ensureAchievementsSchema(env), ensureDailyChallengesSchema(env), ensureVideosSchema(env), ensureGameSchema(env), ensureCompetitionSettings(env), ensureMajlisSchema(env), ensureRewardsSchema(env), ensureRewardOrdersSchema(env)]);
+  const [achievement, challenge, competition, video, headhunter, headhunterPoints, store, majlis, availableAchievements, availableVideos, competitionTarget, account] = await Promise.all([
     env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM achievement_completions WHERE user_id = ?").bind(user.id).first(),
     env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM daily_challenge_attempts WHERE user_id = ? AND status = 'completed'").bind(user.id).first(),
     env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM activity_rewards WHERE user_id = ? AND activity_type = 'competition'").bind(user.id).first(),
     env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM video_completions WHERE user_id = ?").bind(user.id).first(),
     env.DB.prepare("SELECT COUNT(DISTINCT p.match_id) AS count FROM game_match_players p JOIN game_matches m ON m.id = p.match_id WHERE p.user_id = ? AND m.status = 'completed'").bind(user.id).first(),
     env.DB.prepare("SELECT COALESCE(SUM(points),0) AS points FROM (SELECT points FROM game_point_awards WHERE user_id = ? UNION ALL SELECT points FROM official_game_point_awards WHERE user_id = ?)").bind(user.id, user.id).first(),
+    env.DB.prepare("SELECT (SELECT COUNT(*) FROM purchases WHERE user_id = ?) + (SELECT COUNT(*) FROM reward_orders WHERE user_id = ?) AS count, COALESCE((SELECT SUM(points_paid) FROM purchases WHERE user_id = ?),0) + COALESCE((SELECT SUM(points_paid) FROM reward_orders WHERE user_id = ?),0) AS points").bind(user.id, user.id, user.id, user.id).first(),
+    env.DB.prepare("SELECT (SELECT COUNT(*) FROM majlis_posts WHERE user_id = ?) + (SELECT COUNT(*) FROM majlis_comments WHERE user_id = ?) + (SELECT COUNT(*) FROM majlis_reactions WHERE user_id = ?) AS count").bind(user.id, user.id, user.id).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM achievement_tasks WHERE active = 1 AND deleted_at IS NULL").first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM videos WHERE active = 1 AND (beneficiary_level = 'all' OR (',' || beneficiary_level || ',') LIKE ('%,' || ? || ',%'))").bind(String(user.education_stage || "")).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM competition_settings").first(),
@@ -422,10 +428,11 @@ async function getJourneyProgress(env, user) {
   ]);
   const raw = [
     { key: "achievements", label: "إنجازاتي", icon: "✅", count: achievement?.count, points: achievement?.points, target: Math.max(1, Number(availableAchievements?.count || 0)) },
-    { key: "challenges", label: "التحديات", icon: "🎯", count: challenge?.count, points: challenge?.points, target: 10 },
-    { key: "competitions", label: "المسابقات", icon: "🏆", count: competition?.count, points: competition?.points, target: Math.max(1, Number(competitionTarget?.count || 6)) },
     { key: "episodes", label: "الحلقات", icon: "🎬", count: video?.count, points: video?.points, target: Math.max(1, Number(availableVideos?.count || 0)) },
-    { key: "headhunters", label: "مصامخ الرؤوس", icon: "🧠", count: headhunter?.count, points: headhunterPoints?.points, target: 5 }
+    { key: "challenges", label: "التحديات", icon: "🎯", count: Number(challenge?.count || 0) + Number(competition?.count || 0), points: Number(challenge?.points || 0) + Number(competition?.points || 0), target: 10 + Math.max(1, Number(competitionTarget?.count || 6)) },
+    { key: "headhunters", label: "مصامخ الرؤوس", icon: "🧠", count: headhunter?.count, points: headhunterPoints?.points, target: 5 },
+    { key: "store", label: "المتجر", icon: "🎁", count: store?.count, points: store?.points, target: 3 },
+    { key: "posts", label: "حي الله من جانا", icon: "☕", count: majlis?.count, points: 0, target: 10 }
   ];
   const sections = raw.map(item => ({ ...item, count: Number(item.count || 0), points: Number(item.points || 0), progress: Math.min(100, Math.round(Number(item.count || 0) / item.target * 100)) }));
   const completed = sections.reduce((sum, item) => sum + item.count, 0);
@@ -992,6 +999,8 @@ async function ensureVideosSchema(env) {
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, beneficiary_level TEXT NOT NULL, video_url TEXT NOT NULL, points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 10000), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)), created_by INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS video_completions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, video_id INTEGER NOT NULL REFERENCES videos(id), points INTEGER NOT NULL CHECK (points > 0), completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, video_id))").run();
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS video_completions_user ON video_completions(user_id, completed_at DESC)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS video_daily_views (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, video_id INTEGER NOT NULL REFERENCES videos(id), view_date TEXT NOT NULL, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, view_date))").run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS video_daily_views_user_date ON video_daily_views(user_id, view_date DESC)").run();
   await env.DB.prepare("CREATE TRIGGER IF NOT EXISTS video_completion_add_points AFTER INSERT ON video_completions BEGIN UPDATE users SET points = points + NEW.points WHERE id = NEW.user_id; END").run();
 }
 
@@ -1002,7 +1011,9 @@ async function listVideos(env, user, ownerView = false) {
     : "SELECT v.id, v.title, v.beneficiary_level, v.video_url, v.points, EXISTS(SELECT 1 FROM video_completions c WHERE c.video_id = v.id AND c.user_id = ?) AS completed FROM videos v WHERE v.active = 1 AND (v.beneficiary_level = 'all' OR (',' || v.beneficiary_level || ',') LIKE ('%,' || ? || ',%')) ORDER BY v.id DESC";
   const query = ownerView ? env.DB.prepare(sql) : env.DB.prepare(sql).bind(user.id, String(user.education_stage || ""));
   const { results } = await query.all();
-  return json({ videos: results });
+  if (ownerView) return json({ videos: results });
+  const dailyView = await env.DB.prepare("SELECT video_id, view_date, started_at FROM video_daily_views WHERE user_id = ? AND view_date = ?").bind(user.id, riyadhDate()).first();
+  return json({ videos: results, dailyLimit: 1, dailyView: dailyView || null });
 }
 
 function validateVideoInput(body) {
@@ -1045,11 +1056,27 @@ async function deleteVideo(env, id) {
   return result.meta.changes ? json({ ok: true }) : json({ error: "المقطع غير موجود" }, 404);
 }
 
+async function startVideoView(env, user, videoId) {
+  if (user.role !== "student") return json({ error: "المشاهدة مخصصة للمستفيدين" }, 400);
+  await ensureVideosSchema(env);
+  const video = await env.DB.prepare("SELECT id FROM videos WHERE id = ? AND active = 1 AND (beneficiary_level = 'all' OR (',' || beneficiary_level || ',') LIKE ('%,' || ? || ',%'))").bind(videoId, String(user.education_stage || "")).first();
+  if (!video) return json({ error: "المقطع غير متاح لمستواك" }, 404);
+  const today = riyadhDate();
+  await env.DB.prepare("INSERT OR IGNORE INTO video_daily_views (user_id, video_id, view_date) VALUES (?, ?, ?)").bind(user.id, videoId, today).run();
+  const dailyView = await env.DB.prepare("SELECT video_id, view_date, started_at FROM video_daily_views WHERE user_id = ? AND view_date = ?").bind(user.id, today).first();
+  if (Number(dailyView?.video_id) !== Number(videoId)) return json({ error: "المتاح مشاهدة فيديو واحد فقط كل يوم. يمكنك مشاهدة فيديو جديد غدًا" }, 409);
+  return json({ ok: true, dailyLimit: 1, dailyView });
+}
+
 async function completeVideo(env, user, videoId) {
   if (user.role !== "student") return json({ error: "المشاهدة مخصصة للمستفيدين" }, 400);
   await ensureVideosSchema(env);
   const video = await env.DB.prepare("SELECT id, points FROM videos WHERE id = ? AND active = 1 AND (beneficiary_level = 'all' OR (',' || beneficiary_level || ',') LIKE ('%,' || ? || ',%'))").bind(videoId, String(user.education_stage || "")).first();
   if (!video) return json({ error: "المقطع غير متاح لمستواك" }, 404);
+  const today = riyadhDate();
+  await env.DB.prepare("INSERT OR IGNORE INTO video_daily_views (user_id, video_id, view_date) VALUES (?, ?, ?)").bind(user.id, video.id, today).run();
+  const dailyView = await env.DB.prepare("SELECT video_id FROM video_daily_views WHERE user_id = ? AND view_date = ?").bind(user.id, today).first();
+  if (Number(dailyView?.video_id) !== Number(video.id)) return json({ error: "المتاح مشاهدة فيديو واحد فقط كل يوم. يمكنك مشاهدة فيديو جديد غدًا" }, 409);
   const result = await env.DB.prepare("INSERT OR IGNORE INTO video_completions (user_id, video_id, points) VALUES (?, ?, ?)").bind(user.id, video.id, video.points).run();
   const updated = await env.DB.prepare("SELECT points FROM users WHERE id = ?").bind(user.id).first();
   return json({ ok: true, awarded: result.meta.changes ? Number(video.points) : 0, alreadyCompleted: !result.meta.changes, points: Number(updated?.points || 0) });

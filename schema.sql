@@ -122,6 +122,18 @@ CREATE TABLE IF NOT EXISTS video_completions (
 
 CREATE INDEX IF NOT EXISTS video_completions_user ON video_completions(user_id, completed_at DESC);
 
+CREATE TABLE IF NOT EXISTS video_daily_views (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  video_id INTEGER NOT NULL REFERENCES videos(id),
+  view_date TEXT NOT NULL,
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, view_date)
+);
+
+CREATE INDEX IF NOT EXISTS video_daily_views_user_date
+ON video_daily_views(user_id, view_date DESC);
+
 CREATE TRIGGER IF NOT EXISTS video_completion_add_points
 AFTER INSERT ON video_completions
 BEGIN
