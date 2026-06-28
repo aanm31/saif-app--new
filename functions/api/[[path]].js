@@ -642,12 +642,14 @@ function validAchievementTaskInput(body) {
 
 async function createAchievementTaskV2(request, env) {
   await ensureAchievementsSchema(env);
-  const { ok, value } = validAchievementTaskInput(await readJson(request));
-  if (!ok) return json({ error: "???�؟�U?U? U?U? ?�؟�U??�؟�U??�؟� U??�؟�?�؟�U? ?�؟�U?U?U?U??�؟� U??�؟�U?U??�؟�U? U??�؟�U??�؟�?�؟�?�؟�?�؟� U??�؟�U???U??�؟�?�؟�U??�؟�" }, 400);
+  const body = await readJson(request);
+  if (!clean(body.code, 40)) body.code = `TASK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+  const { ok, value } = validAchievementTaskInput(body);
+  if (!ok) return json({ error: "تحقق من اسم المهمة والقسم والنقاط وتواريخ الظهور" }, 400);
   const category = await env.DB.prepare("SELECT category_key FROM achievement_categories WHERE id = ?").bind(value.categoryId).first();
-  if (!category) return json({ error: "?�؟�U?U??�؟�U? ?�؟�U?U??�؟�?�؟�?�؟� ??U??�؟� U?U??�؟�U??�؟�" }, 400);
+  if (!category) return json({ error: "اختر قسمًا صحيحًا للمهمة" }, 400);
   const duplicate = await env.DB.prepare("SELECT id FROM achievement_tasks WHERE code = ? COLLATE NOCASE AND deleted_at IS NULL").bind(value.code).first();
-  if (duplicate) return json({ error: "?�؟�U??�؟� ?�؟�U?U?U?U??�؟� U??�؟�???�؟�?�؟�U? U??�؟�?�؟�U?U??�؟�" }, 409);
+  if (duplicate) return json({ error: "رمز المهمة مستخدم مسبقًا، غيّره أو اتركه فارغًا لإنشائه تلقائيًا" }, 409);
   const legacyCategory = ACHIEVEMENT_CATEGORIES.has(category.category_key) ? category.category_key : "golden_achievements";
   const result = await env.DB.prepare("INSERT INTO achievement_tasks (code, title, description, category, category_id, points, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(value.code, value.title, value.description, legacyCategory, value.categoryId, value.points, value.startDate, value.endDate || null).run();
   return json({ id: result.meta.last_row_id }, 201);
