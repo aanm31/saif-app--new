@@ -1,3 +1,5 @@
+import { EDUCATION_STAGES, QUESTION_COUNT, normalizeStage, questionsForStage } from "./question-bank.js";
+
 const SESSION_COOKIE = "saif_session";
 const SESSION_DAYS = 14;
 const ALLOWED_REWARDS = {
@@ -6,7 +8,7 @@ const ALLOWED_REWARDS = {
 };
 const DAILY_CHALLENGES = new Set(["fast-answer", "character", "blurred-image", "image-puzzle", "password", "scrambled-letters", "differences", "memory", "maze", "hidden-treasure"]);
 const ACHIEVEMENT_CATEGORIES = new Set(["golden_achievements", "golden_fortress", "noori", "knowledge_station", "golden_minute", "health_first"]);
-const EDUCATION_STAGES = new Set(["?�؟�U??�؟�?�؟�", "?�؟�?�؟�???�؟�?�؟�?�؟�U? ?�؟�U?U?U? ?�؟�U?U??�؟�", "?�؟�?�؟�???�؟�?�؟�?�؟�U? ?�؟�U?U?U? ?�؟�U?U??�؟�", "U???U??�؟�?�؟�", "?�؟�?�؟�U?U?U?", "U?U??�؟�U?"]);
+const EDUCATION_STAGE_SET = new Set(EDUCATION_STAGES);
 const GROUP_GAMES = new Map([
   ["who-first","U?U? ?�؟�?�؟�U???"],["dual-battle","?�؟�U?U??�؟�?�؟�U??�؟� ?�؟�U??�؟�U??�؟�?�؟�U??�؟�"],["finish-first","?�؟�U?U?U? U??�؟�U?U?"],["ask-others","?�؟�?�؟�?�؟�U? ??U??�؟�U? ?�؟�?�؟�?�؟�U??�؟�U?"],["smartest-survives","?�؟�U??�؟�U??�؟�?? U?U??�؟�?�؟�U?U?"],
   ["auction","?�؟�U?U??�؟�?�؟�?�؟�"],["answer-owner","U?U? ?�؟�?�؟�?�؟�?�؟� ?�؟�U??�؟�?�؟�?�؟�?�؟�?�؟�??"],["fix-error","?�؟�U?U?U? ?�؟�U??�؟�?�؟�?�؟�"],["who-said","U?U? U??�؟�U?U??�؟�??"],["find-liar","?�؟�U????�؟�U? ?�؟�U?U??�؟�?�؟�?�؟�"],
@@ -37,8 +39,12 @@ export async function onRequest(context) {
     const user = session.user;
 
     if (method === "GET" && path === "daily-challenges") return listDailyChallenges(env, user);
+    if (method === "GET" && path === "question-bank") return json({ count: QUESTION_COUNT, stage: normalizeStage(user.education_stage), questions: questionsForStage(user.education_stage, Math.min(100, Number(url.searchParams.get("count")) || 30), Date.now()) });
     if (method === "GET" && path === "manager-instructions") return getManagerInstructions(env);
     if (method === "GET" && path === "challenge-race") return getChallengeRace(env);
+    if (method === "GET" && path === "videos") return listVideos(env, user, false);
+    const videoComplete = path.match(/^videos\/(\d+)\/complete$/);
+    if (method === "POST" && videoComplete) return completeVideo(env, user, Number(videoComplete[1]));
     if (method === "GET" && path === "achievements") return listAchievementsV2(url, env, user);
     if (method === "GET" && path === "achievements/leaderboards") return achievementLeaderboards(env);
     if (method === "GET" && path === "game-hub") return getGameHub(env, user);
@@ -89,6 +95,9 @@ export async function onRequest(context) {
       if (method === "PUT" && path === "owner/manager-instructions") return updateManagerInstructions(request, env);
       if (method === "GET" && path === "owner/challenge-race") return getChallengeRace(env);
       if (method === "PUT" && path === "owner/challenge-race") return updateChallengeRace(request, env);
+      if ((method !== "GET" && path === "owner/videos" || /^owner\/videos\/\d+$/.test(path)) && user.role !== "owner") return json({ error: "إدارة الفيديوهات متاحة لمالك المنصة فقط" }, 403);
+      if (method === "GET" && path === "owner/videos") return listVideos(env, user, user.role === "owner");
+      if (method === "POST" && path === "owner/videos") return createVideo(request, env, user);
       if (method === "POST" && path === "owner/achievement-tasks") return createAchievementTaskV2(request, env);
       if (method === "POST" && path === "owner/achievement-categories") return createAchievementCategory(request, env);
       if (method === "POST" && path === "owner/users") return createUser(request, env);
@@ -125,6 +134,9 @@ export async function onRequest(context) {
       const reward = path.match(/^owner\/rewards\/(\d+)$/);
       if (method === "PUT" && reward) return updateReward(request, env, Number(reward[1]));
       if (method === "DELETE" && reward) return deleteReward(env, Number(reward[1]));
+      const video = path.match(/^owner\/videos\/(\d+)$/);
+      if (method === "PUT" && video) return updateVideo(request, env, Number(video[1]));
+      if (method === "DELETE" && video) return deleteVideo(env, Number(video[1]));
       const deliveredOrder = path.match(/^owner\/reward-orders\/(\d+)\/delivered$/);
       if (method === "PUT" && deliveredOrder) return markRewardOrderDelivered(env, Number(deliveredOrder[1]));
     }
@@ -208,6 +220,9 @@ async function ensureSchema(env) {
     "CREATE TABLE IF NOT EXISTS purchases (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), points_paid INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS rewards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, image TEXT NOT NULL, amount REAL NOT NULL CHECK (amount > 0), category TEXT NOT NULL CHECK (category IN ('daily','weekly','grand')), active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS reward_orders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, reward_id INTEGER NOT NULL REFERENCES rewards(id), points_paid INTEGER NOT NULL CHECK (points_paid > 0), status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','delivered')), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, delivered_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, beneficiary_level TEXT NOT NULL, video_url TEXT NOT NULL, points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 10000), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)), created_by INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS video_completions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, video_id INTEGER NOT NULL REFERENCES videos(id), points INTEGER NOT NULL CHECK (points > 0), completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, video_id))",
+    "CREATE TRIGGER IF NOT EXISTS video_completion_add_points AFTER INSERT ON video_completions BEGIN UPDATE users SET points = points + NEW.points WHERE id = NEW.user_id; END",
     "CREATE TABLE IF NOT EXISTS daily_challenge_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, challenge_key TEXT NOT NULL, challenge_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'started' CHECK (status IN ('started','completed')), score INTEGER NOT NULL DEFAULT 0 CHECK (score >= 0), points INTEGER NOT NULL DEFAULT 0 CHECK (points >= 0), duration_ms INTEGER NOT NULL DEFAULT 0 CHECK (duration_ms >= 0), started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TEXT, UNIQUE(user_id, challenge_key, challenge_date))",
     "CREATE INDEX IF NOT EXISTS daily_attempts_user_date ON daily_challenge_attempts(user_id, challenge_date)",
     "CREATE TABLE IF NOT EXISTS daily_challenge_settings (challenge_key TEXT PRIMARY KEY, max_points INTEGER NOT NULL CHECK (max_points BETWEEN 1 AND 10000), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
@@ -239,6 +254,7 @@ async function ensureSchema(env) {
   for (const statement of statements) {
     await env.DB.prepare(statement).run();
   }
+  await env.DB.prepare("UPDATE products SET name = 'حقيبة فرفشة', description = 'حقيبة مرحة للدراسة والمغامرات' WHERE id = 4").run();
   await ensureColumns(env, "users", {
     password_hash: "TEXT NOT NULL DEFAULT ''",
     password_salt: "TEXT NOT NULL DEFAULT ''",
@@ -316,7 +332,7 @@ async function createRequest(request, env) {
   const name = clean(body.name, 80), username = clean(body.username, 40).toLowerCase();
   const contact = clean(body.contact, 40), note = clean(body.note, 300), educationStage = clean(body.educationStage, 40);
   const password = String(body.password || ""), confirmPassword = String(body.confirmPassword || "");
-  if (name.length < 3 || !validUsername(username) || contact.length < 7 || !EDUCATION_STAGES.has(educationStage)) return json({ error: "???�؟�U?U? U?U? ?�؟�U??�؟�U??�؟�?? ?�؟�U????�؟�?�؟�U?U? U??�؟�?�؟�???�؟� ?�؟�U?U??�؟�?�؟�U??�؟�" }, 400);
+  if (name.length < 3 || !validUsername(username) || contact.length < 7 || !EDUCATION_STAGE_SET.has(educationStage)) return json({ error: "تحقق من الاسم واسم المستخدم ووسيلة التواصل والمرحلة" }, 400);
   if (password.length < 8 || password.length > 128) return json({ error: "U?U?U??�؟� ?�؟�U?U??�؟�U??�؟� U??�؟�?�؟� ?�؟�U? ??U?U?U? 8 ?�؟�?�؟�?�؟�U? ?�؟�U?U? ?�؟�U??�؟�U?U?" }, 400);
   if (password !== confirmPassword) return json({ error: "U?U?U????�؟� ?�؟�U?U??�؟�U??�؟� ??U??�؟� U????�؟�?�؟�?�؟�U???U?U?" }, 400);
   const exists = await env.DB.prepare("SELECT 1 FROM users WHERE username = ? LIMIT 1").bind(username).first();
@@ -713,7 +729,9 @@ async function listDailyChallenges(env, user) {
     env.DB.prepare("SELECT challenge_key, status, score, points, duration_ms FROM daily_challenge_attempts WHERE user_id = ? AND challenge_date = ?").bind(user.id, date),
     env.DB.prepare("SELECT challenge_key, max_points FROM daily_challenge_settings ORDER BY challenge_key")
   ]);
-  return json({ date, level: user.level || 1, attempts: attemptRows.results, settings: settingRows.results });
+  const stage = normalizeStage(user.education_stage);
+  const seed = Number(date.replaceAll("-", "")) + Number(user.id) * 97;
+  return json({ date, level: user.level || 1, stage, questionBankCount: QUESTION_COUNT, questions: questionsForStage(stage, 40, seed), attempts: attemptRows.results, settings: settingRows.results });
 }
 
 async function listDailyChallengeSettings(env) {
@@ -937,6 +955,69 @@ function validateReward(body) {
   return { name, image, amount, category };
 }
 
+async function ensureVideosSchema(env) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS videos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, beneficiary_level TEXT NOT NULL, video_url TEXT NOT NULL, points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 10000), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)), created_by INTEGER REFERENCES users(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS video_completions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, video_id INTEGER NOT NULL REFERENCES videos(id), points INTEGER NOT NULL CHECK (points > 0), completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, video_id))").run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS video_completions_user ON video_completions(user_id, completed_at DESC)").run();
+  await env.DB.prepare("CREATE TRIGGER IF NOT EXISTS video_completion_add_points AFTER INSERT ON video_completions BEGIN UPDATE users SET points = points + NEW.points WHERE id = NEW.user_id; END").run();
+}
+
+async function listVideos(env, user, ownerView = false) {
+  await ensureVideosSchema(env);
+  const sql = ownerView
+    ? "SELECT v.*, CASE WHEN v.active = 1 THEN 0 ELSE 1 END AS completed FROM videos v ORDER BY v.active DESC, v.id DESC"
+    : "SELECT v.id, v.title, v.beneficiary_level, v.video_url, v.points, EXISTS(SELECT 1 FROM video_completions c WHERE c.video_id = v.id AND c.user_id = ?) AS completed FROM videos v WHERE v.active = 1 AND (v.beneficiary_level = ? OR v.beneficiary_level = 'all') ORDER BY v.id DESC";
+  const query = ownerView ? env.DB.prepare(sql) : env.DB.prepare(sql).bind(user.id, String(user.education_stage || ""));
+  const { results } = await query.all();
+  return json({ videos: results });
+}
+
+function validateVideoInput(body) {
+  const title = clean(body.title, 120), beneficiaryLevel = clean(body.beneficiaryLevel, 40);
+  const videoUrl = String(body.videoUrl || "").trim().slice(0, 1000), points = Math.floor(Number(body.points));
+  let validUrl = false;
+  try { const url = new URL(videoUrl); validUrl = url.protocol === "https:" || url.protocol === "http:"; } catch {}
+  if (title.length < 2 || !beneficiaryLevel || !validUrl || !Number.isInteger(points) || points < 1 || points > 10000) return { error: "تحقق من اسم المادة والمستوى ورابط الفيديو والنقاط" };
+  return { title, beneficiaryLevel, videoUrl, points };
+}
+
+async function createVideo(request, env, user) {
+  await ensureVideosSchema(env);
+  const video = validateVideoInput(await readJson(request));
+  if (video.error) return json({ error: video.error }, 400);
+  const result = await env.DB.prepare("INSERT INTO videos (title, beneficiary_level, video_url, points, created_by) VALUES (?, ?, ?, ?, ?)").bind(video.title, video.beneficiaryLevel, video.videoUrl, video.points, user.id).run();
+  return json({ id: result.meta.last_row_id, ok: true }, 201);
+}
+
+async function updateVideo(request, env, id) {
+  await ensureVideosSchema(env);
+  const body = await readJson(request);
+  if (Object.keys(body).length === 1 && typeof body.active === "boolean") {
+    const result = await env.DB.prepare("UPDATE videos SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(body.active ? 1 : 0, id).run();
+    return result.meta.changes ? json({ ok: true }) : json({ error: "المقطع غير موجود" }, 404);
+  }
+  const video = validateVideoInput(body);
+  if (video.error) return json({ error: video.error }, 400);
+  const result = await env.DB.prepare("UPDATE videos SET title = ?, beneficiary_level = ?, video_url = ?, points = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(video.title, video.beneficiaryLevel, video.videoUrl, video.points, id).run();
+  return result.meta.changes ? json({ ok: true }) : json({ error: "المقطع غير موجود" }, 404);
+}
+
+async function deleteVideo(env, id) {
+  await ensureVideosSchema(env);
+  const result = await env.DB.prepare("UPDATE videos SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(id).run();
+  return result.meta.changes ? json({ ok: true }) : json({ error: "المقطع غير موجود" }, 404);
+}
+
+async function completeVideo(env, user, videoId) {
+  if (user.role !== "student") return json({ error: "المشاهدة مخصصة للمستفيدين" }, 400);
+  await ensureVideosSchema(env);
+  const video = await env.DB.prepare("SELECT id, points FROM videos WHERE id = ? AND active = 1 AND (beneficiary_level = ? OR beneficiary_level = 'all')").bind(videoId, String(user.education_stage || "")).first();
+  if (!video) return json({ error: "المقطع غير متاح لمستواك" }, 404);
+  const result = await env.DB.prepare("INSERT OR IGNORE INTO video_completions (user_id, video_id, points) VALUES (?, ?, ?)").bind(user.id, video.id, video.points).run();
+  const updated = await env.DB.prepare("SELECT points FROM users WHERE id = ?").bind(user.id).first();
+  return json({ ok: true, awarded: result.meta.changes ? Number(video.points) : 0, alreadyCompleted: !result.meta.changes, points: Number(updated?.points || 0) });
+}
+
 async function purchaseProduct(request, env, user) {
   if (user.role !== "student") return json({ error: "?�؟�?�؟�?�؟�?�؟� ?�؟�U?U??�؟�U?U? U??�؟� U??�؟�???�؟�U? U?U? ?�؟�U?U????�؟�?�؟�" }, 400);
   const body = await readJson(request), productId = Number(body.productId);
@@ -1047,12 +1128,12 @@ async function updateGameSetting(request, env, key) {
 async function gameHubData(env, user) {
   const [fresh, users, matches, settings] = await Promise.all([
     env.DB.prepare("SELECT game_points FROM users WHERE id = ?").bind(user.id).first(),
-    env.DB.prepare("SELECT id,name,level FROM users WHERE role = 'student' AND status = 'active' ORDER BY name").all(),
+    env.DB.prepare("SELECT id,name,level,education_stage FROM users WHERE role = 'student' AND status = 'active' ORDER BY name").all(),
     env.DB.prepare("SELECT m.id,m.game_key,m.game_name,m.mode,m.match_type,m.status,m.rounds,m.created_at,COUNT(p.user_id) player_count,GROUP_CONCAT(CASE WHEN p.is_winner=1 THEN u.name END,'، ') winners FROM game_matches m JOIN game_match_players mine ON mine.match_id=m.id AND mine.user_id=? JOIN game_match_players p ON p.match_id=m.id JOIN users u ON u.id=p.user_id GROUP BY m.id ORDER BY m.id DESC LIMIT 12").bind(user.id).all(),
     env.DB.prepare("SELECT setting_key,setting_value FROM game_settings").all()
   ]);
   const config = Object.fromEntries(settings.results.map(row => [row.setting_key, Number(row.setting_value)]));
-  return { balance: Number(fresh?.game_points || 0), users: users.results, matches: matches.results, settings: { winPoints: config.win_points || 100, millionCap: config.million_cap || 10000 } };
+  return { balance: Number(fresh?.game_points || 0), stage: normalizeStage(user.education_stage), questionBankCount: QUESTION_COUNT, users: users.results, matches: matches.results, settings: { winPoints: config.win_points || 100, millionCap: config.million_cap || 10000 } };
 }
 
 async function getGameHub(env, user) {
@@ -1075,14 +1156,17 @@ async function createGameMatch(request, env, user) {
   if (mode === "individual" && players.some(item => item.side !== String(item.userId))) return json({ error: "?�؟�?�؟�?�؟�?�؟�?�؟� ?�؟�U??�؟�U??�؟�?�؟�?�؟� ??U??�؟� ?�؟�?�؟�U??�؟�" }, 400);
   if (mode === "teams" && (players.some(item => !["A","B"].includes(item.side)) || players.filter(item => item.side === "A").length < 2 || players.filter(item => item.side === "B").length < 2)) return json({ error: "?�؟�?�؟�???�؟� ?�؟�?�؟�?�؟�U?U? ?�؟�U?U? ?�؟�U??�؟�U?U? U?U? U?U? U??�؟�U?U?" }, 400);
   const ids = players.map(item => item.userId), placeholders = ids.map(() => "?").join(",");
-  const active = await env.DB.prepare(`SELECT id,name FROM users WHERE role='student' AND status='active' AND id IN (${placeholders})`).bind(...ids).all();
+  const active = await env.DB.prepare(`SELECT id,name,education_stage FROM users WHERE role='student' AND status='active' AND id IN (${placeholders})`).bind(...ids).all();
   if (active.results.length !== players.length) return json({ error: "?�؟�?�؟�?�؟� ?�؟�U?U??�؟�?�؟�?�؟�U?U?U? ??U??�؟� U????�؟�?�؟�" }, 409);
   const result = await env.DB.prepare("INSERT INTO game_matches (game_key,game_name,mode,host_user_id,rounds,timer_seconds,max_bet,match_type) VALUES (?,?,?,?,?,?,?,?)").bind(gameKey, GROUP_GAMES.get(gameKey), mode, user.id, rounds, timer, maxBet, matchType).run();
   const matchId = Number(result.meta.last_row_id);
   await env.DB.batch(players.map(item => env.DB.prepare("INSERT INTO game_match_players (match_id,user_id,side) VALUES (?,?,?)").bind(matchId,item.userId,item.side)));
   const names = new Map(active.results.map(item => [Number(item.id), item.name]));
+  const stageIndexes = active.results.map(item => Math.max(0, EDUCATION_STAGES.indexOf(normalizeStage(item.education_stage))));
+  const averageStage = EDUCATION_STAGES[Math.round(stageIndexes.reduce((sum, value) => sum + value, 0) / stageIndexes.length)] || normalizeStage(user.education_stage);
+  const questions = questionsForStage(averageStage, Math.min(30, rounds), matchId * 101 + Date.now());
   const sides = mode === "teams" ? ["A","B"].map(side => ({ key: side, name: side === "A" ? "?�؟�U?U??�؟�U?U? ?�؟�U??�؟�U?U?" : "?�؟�U?U??�؟�U?U? ?�؟�U??�؟�?�؟�U?U?", members: players.filter(item => item.side === side).map(item => names.get(item.userId)) })) : players.map(item => ({ key: item.side, name: names.get(item.userId), members: [names.get(item.userId)] }));
-  return json({ match: { id: matchId, gameKey, gameName: GROUP_GAMES.get(gameKey), icon: "🧠", mode, matchType, rounds, timer, maxBet, sides } }, 201);
+  return json({ match: { id: matchId, gameKey, gameName: GROUP_GAMES.get(gameKey), icon: "🧠", mode, matchType, stage: averageStage, questions, rounds, timer, maxBet, sides } }, 201);
 }
 
 async function completeGameMatch(request, env, user, matchId) {

@@ -99,6 +99,35 @@ CREATE TABLE IF NOT EXISTS reward_orders (
   delivered_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS videos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  beneficiary_level TEXT NOT NULL,
+  video_url TEXT NOT NULL,
+  points INTEGER NOT NULL CHECK (points BETWEEN 1 AND 10000),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS video_completions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  video_id INTEGER NOT NULL REFERENCES videos(id),
+  points INTEGER NOT NULL CHECK (points > 0),
+  completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, video_id)
+);
+
+CREATE INDEX IF NOT EXISTS video_completions_user ON video_completions(user_id, completed_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS video_completion_add_points
+AFTER INSERT ON video_completions
+BEGIN
+  UPDATE users SET points = points + NEW.points WHERE id = NEW.user_id;
+END;
+
 CREATE TABLE IF NOT EXISTS daily_challenge_attempts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -252,7 +281,7 @@ INSERT OR IGNORE INTO products (id, name, description, price, icon, stock) VALUE
   (1, 'قسيمة مكتبة', 'قسيمة لشراء كتاب من المكتبة', 1200, '📚', 8),
   (2, 'كوب الإنجاز', 'كوب حصري يحمل شعار المنصة', 1800, '🏆', 4),
   (3, 'ساعة ذكية', 'جائزة للمثابرين وأصحاب الهمم', 6500, '⌚', 2),
-  (4, 'حقيبة صيف', 'حقيبة مرحة للدراسة والمغامرات', 3200, '🎒', 6),
+  (4, 'حقيبة فرفشة', 'حقيبة مرحة للدراسة والمغامرات', 3200, '🎒', 6),
   (5, 'وقت لعب إضافي', '30 دقيقة ألعاب تعليمية إضافية', 600, '🎮', 20),
   (6, 'شارة المستكشف', 'شارة نادرة تظهر في ملفك الشخصي', 900, '🧭', 12);
 
