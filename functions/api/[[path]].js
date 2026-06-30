@@ -411,28 +411,25 @@ async function deleteUser(env, id, ownerId) {
 }
 
 async function getJourneyProgress(env, user) {
-  await Promise.all([ensureAchievementsSchema(env), ensureDailyChallengesSchema(env), ensureVideosSchema(env), ensureGameSchema(env), ensureCompetitionSettings(env), ensureMajlisSchema(env), ensureRewardsSchema(env), ensureRewardOrdersSchema(env)]);
-  const [achievement, challenge, competition, video, headhunter, headhunterPoints, store, majlis, availableAchievements, availableVideos, competitionTarget, account] = await Promise.all([
+  await ensureAchievementsSchema(env);
+  await ensureDailyChallengesSchema(env);
+  await ensureGameSchema(env);
+  await ensureCompetitionSettings(env);
+  const [achievement, challenge, competition, headhunter, headhunterPoints, availableAchievements, competitionTarget, account] = await Promise.all([
     env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM achievement_completions WHERE user_id = ?").bind(user.id).first(),
     env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM daily_challenge_attempts WHERE user_id = ? AND status = 'completed'").bind(user.id).first(),
     env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM activity_rewards WHERE user_id = ? AND activity_type = 'competition'").bind(user.id).first(),
-    env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(points),0) AS points FROM video_completions WHERE user_id = ?").bind(user.id).first(),
     env.DB.prepare("SELECT COUNT(DISTINCT p.match_id) AS count FROM game_match_players p JOIN game_matches m ON m.id = p.match_id WHERE p.user_id = ? AND m.status = 'completed'").bind(user.id).first(),
     env.DB.prepare("SELECT COALESCE(SUM(points),0) AS points FROM (SELECT points FROM game_point_awards WHERE user_id = ? UNION ALL SELECT points FROM official_game_point_awards WHERE user_id = ?)").bind(user.id, user.id).first(),
-    env.DB.prepare("SELECT (SELECT COUNT(*) FROM purchases WHERE user_id = ?) + (SELECT COUNT(*) FROM reward_orders WHERE user_id = ?) AS count, COALESCE((SELECT SUM(points_paid) FROM purchases WHERE user_id = ?),0) + COALESCE((SELECT SUM(points_paid) FROM reward_orders WHERE user_id = ?),0) AS points").bind(user.id, user.id, user.id, user.id).first(),
-    env.DB.prepare("SELECT (SELECT COUNT(*) FROM majlis_posts WHERE user_id = ?) + (SELECT COUNT(*) FROM majlis_comments WHERE user_id = ?) + (SELECT COUNT(*) FROM majlis_reactions WHERE user_id = ?) AS count").bind(user.id, user.id, user.id).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM achievement_tasks WHERE active = 1 AND deleted_at IS NULL").first(),
-    env.DB.prepare("SELECT COUNT(*) AS count FROM videos WHERE active = 1 AND (beneficiary_level = 'all' OR (',' || beneficiary_level || ',') LIKE ('%,' || ? || ',%'))").bind(String(user.education_stage || "")).first(),
     env.DB.prepare("SELECT COUNT(*) AS count FROM competition_settings").first(),
     env.DB.prepare("SELECT points, game_points FROM users WHERE id = ?").bind(user.id).first()
   ]);
   const raw = [
     { key: "achievements", label: "إنجازاتي", icon: "✅", count: achievement?.count, points: achievement?.points, target: Math.max(1, Number(availableAchievements?.count || 0)) },
-    { key: "episodes", label: "الحلقات", icon: "🎬", count: video?.count, points: video?.points, target: Math.max(1, Number(availableVideos?.count || 0)) },
-    { key: "challenges", label: "التحديات", icon: "🎯", count: Number(challenge?.count || 0) + Number(competition?.count || 0), points: Number(challenge?.points || 0) + Number(competition?.points || 0), target: 10 + Math.max(1, Number(competitionTarget?.count || 6)) },
-    { key: "headhunters", label: "مصامخ الرؤوس", icon: "🧠", count: headhunter?.count, points: headhunterPoints?.points, target: 5 },
-    { key: "store", label: "المتجر", icon: "🎁", count: store?.count, points: store?.points, target: 3 },
-    { key: "posts", label: "حي الله من جانا", icon: "☕", count: majlis?.count, points: 0, target: 10 }
+    { key: "challenges", label: "التحديات", icon: "🎯", count: challenge?.count, points: challenge?.points, target: 10 },
+    { key: "competitions", label: "المسابقات", icon: "🏆", count: competition?.count, points: competition?.points, target: Math.max(1, Number(competitionTarget?.count || 6)) },
+    { key: "headhunters", label: "مصامخ الرؤوس", icon: "🧠", count: headhunter?.count, points: headhunterPoints?.points, target: 5 }
   ];
   const sections = raw.map(item => ({ ...item, count: Number(item.count || 0), points: Number(item.points || 0), progress: Math.min(100, Math.round(Number(item.count || 0) / item.target * 100)) }));
   const completed = sections.reduce((sum, item) => sum + item.count, 0);
